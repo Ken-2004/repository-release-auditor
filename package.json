@@ -1,0 +1,22 @@
+{
+  "name": "repository-release-auditor",
+  "version": "0.1.0",
+  "description": "Local CLI for evidence-based Git repository release-hygiene checks.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/cli.js",
+    "test": "npm run build && node --test dist/tests/*.test.js",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "private": true,
+  "devDependencies": {
+    "@types/node": "^24.13.5",
+    "typescript": "^7.0.2"
+  }
+}
