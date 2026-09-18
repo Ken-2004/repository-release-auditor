@@ -10,6 +10,7 @@ import { getRepositorySnapshot } from "./git/snapshot.js";
 import { formatTextReport } from "./reporters/text.js";
 import { gitCleanlinessRule } from "./rules/git-cleanliness.js";
 import { riskyTrackedFileRule } from "./rules/risky-tracked-file.js";
+import { developerMachinePathRule } from "./rules/developer-machine-path.js";
 
 const VERSION = "0.1.0";
 
@@ -68,7 +69,7 @@ async function main(): Promise<void> {
 
     const findings = runAudit(
       { repository },
-      [gitCleanlinessRule, riskyTrackedFileRule]
+      [gitCleanlinessRule, riskyTrackedFileRule, developerMachinePathRule]
     );
 
     console.log(

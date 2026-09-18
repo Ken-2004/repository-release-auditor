@@ -31,6 +31,10 @@ export function formatTextReport(
       lines.push(`Path: ${finding.path}`);
     }
 
+    if (finding.evidence !== undefined) {
+      lines.push(`Evidence: ${finding.evidence}`);
+    }
+
     if (finding.remediation !== undefined) {
       lines.push(`Remediation: ${finding.remediation}`);
     }

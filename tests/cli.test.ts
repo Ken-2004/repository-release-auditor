@@ -6,6 +6,8 @@ import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { MAX_TEXT_FILE_BYTES } from "../src/files/tracked-text.js";
+
 const cliPath = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 
 async function fixture(t: TestContext) {
@@ -247,4 +249,73 @@ test("CLI reports a force-tracked ignored env file alongside the cleanliness war
   assert.equal(result.stdout.match(/\[WARNING\] risky-tracked-file/g)?.length, 1);
   assert.match(result.stdout, /\nPath: \.env\r?\n/);
   assert.equal((result.stdout + result.stderr).includes(sensitiveFixtureContent), false);
+});
+
+const aliceProjectPath = ["/home", "alice", "project"].join("/");
+
+test("CLI reports machine paths once per file with deterministic, redacted evidence", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  await mkdir(join(f.directory, "nested"));
+  await writeFile(join(f.directory, "nested", "build.txt"), [
+    `unrelated ${sensitiveFixtureContent}`,
+    ["C:", "Users", "PrivateAlice", "PrivateProject"].join("\\"),
+    ["/home", "PrivateBob", "OtherProject"].join("/")
+  ].join("\n"));
+  await writeFile(join(f.directory, "a.txt"), ["/mnt/c", "Users", "PrivateCarol", "HiddenProject"].join("/"));
+  f.git(["add", "."]);
+  f.git(["commit", "--quiet", "-m", "machine path fixtures"]);
+  const result = f.cli();
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /\n2 findings:\r?\n/);
+  assert.equal(result.stdout.match(/\[WARNING\] developer-machine-path/g)?.length, 2);
+  assert.deepEqual(result.stdout.split(/\r?\n/).filter((line) => line.startsWith("Path: ")), [
+    "Path: a.txt", "Path: nested/build.txt"
+  ]);
+  assert.match(result.stdout, /Evidence: Line 1: WSL home path; value redacted\./);
+  assert.match(result.stdout, /Evidence: Line 2: Windows drive path; value redacted\./);
+  assert.doesNotMatch(result.stdout, /PrivateAlice|PrivateBob|PrivateCarol|PrivateProject|OtherProject|HiddenProject|git-cleanliness/);
+  assert.equal((result.stdout + result.stderr).includes(sensitiveFixtureContent), false);
+  assert.equal(f.cli().stdout, result.stdout);
+});
+
+test("CLI accepts relative paths, URLs, system paths, and explicit placeholders", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  await writeFile(join(f.directory, "README.md"), [
+    "./src/index.ts", "../config/file.json", `https://example.com${aliceProjectPath}`,
+    `https://example.com/?file=${["C:", "Users", "Alice", "project"].join("/")}`, "/usr/local/bin", "/var/log/app",
+    "/home/<user>/project", "/Users/${USER}/project", "C:/Users/%USERNAME%/project"
+  ].join("\n"));
+  f.git(["add", "README.md"]);
+  f.git(["commit", "--quiet", "-m", "portable fixtures"]);
+  assertClean(f.cli());
+});
+
+test("CLI safely skips binary, unsupported, and oversized tracked files", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  await writeFile(join(f.directory, "binary.txt"), Buffer.from(`\0${aliceProjectPath}`));
+  await writeFile(join(f.directory, "data.bin"), aliceProjectPath);
+  const oversized = Buffer.alloc(MAX_TEXT_FILE_BYTES + 1, 65);
+  oversized.write(`${aliceProjectPath}\n`);
+  await writeFile(join(f.directory, "oversized.txt"), oversized);
+  f.git(["add", "."]);
+  f.git(["commit", "--quiet", "-m", "skipped content fixtures"]);
+  assertClean(f.cli());
+});
+
+test("CLI does not scan ignored or untracked text files", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  await writeFile(join(f.directory, ".gitignore"), "local.txt\n");
+  f.git(["add", ".gitignore"]);
+  f.git(["commit", "--quiet", "-m", "ignore fixture"]);
+  await writeFile(join(f.directory, "local.txt"), ["/home", "alice", "private"].join("/"));
+  assertClean(f.cli());
+  await writeFile(join(f.directory, "untracked.txt"), ["/home", "bob", "private"].join("/"));
+  const result = f.cli();
+  assertDirty(result);
+  assert.doesNotMatch(result.stdout, /developer-machine-path|alice|bob/);
 });

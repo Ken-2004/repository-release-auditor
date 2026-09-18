@@ -106,7 +106,7 @@ The exit-code contract is:
 
 ## Project status
 
-Phase 2: Git cleanliness and risky tracked-file path auditing.
+Phase 3: Git cleanliness, risky tracked files, and developer-machine paths.
 
 The current implementation can:
 
@@ -149,6 +149,40 @@ would otherwise exclude them. Findings retain path casing and are sorted by
 path using a locale-independent order. No file contents or secret values are
 printed. Verify flagged files and, if needed, remove sensitive material from
 version control and history and rotate exposed credentials.
+
+The `developer-machine-path` rule examines the current worktree contents of
+tracked text files (including staged files, but not historical or staged blob
+contents). It reports one warning per affected file, sorted by Git path:
+
+- Windows drive-rooted paths using `/` or `\`, including escaped backslashes
+  in JSON or source strings. Common `Windows`, `Program Files`,
+  `Program Files (x86)`, `ProgramData`, and `Temp` roots are excluded.
+- Unix/macOS home paths under `/home/<user>` or `/Users/<user>`.
+- WSL home paths under `/mnt/<drive>/Users/<user>` or `/mnt/<drive>/home/<user>`.
+
+Here, `<user>` denotes a concrete username. Literal placeholders such as
+`<user>`, `${USER}`, `%USERNAME%`, `{username}`, `[username]`, and `__USER__`
+are excluded. Relative paths, URLs (including `file://` URLs), and unrelated
+absolute system paths such as `/usr/bin`, `/var/log`, and `/tmp` do not match.
+Matching is case-insensitive and conservative; it is not a complete parser of
+every language or path representation.
+
+Content scanning is limited to **1 MiB (1,048,576 bytes) per file**. The reader
+accepts common source, documentation, and configuration text extensions plus
+explicit text filenames such as `README`, `Dockerfile`, `.gitignore`, and
+`.env` variants; the full list is in `src/files/tracked-text.ts`. It validates
+UTF-8 (including ASCII and UTF-8 BOMs) and rejects binary control bytes before
+decoding. Unsupported extensions/encodings, binary-looking data, oversized
+files, missing worktree files, directories, and symlinks (including paths below
+linked directories) are skipped without a finding or runtime failure. Other
+read failures remain runtime errors. Files inside submodules are not scanned.
+
+Evidence contains only the first matching line number and path category, with
+the value fully redacted. No embedded usernames, drive letters, directory names,
+or surrounding lines are printed. Replace flagged paths with relative paths,
+environment variables, configuration, or documented placeholders. Filename and
+byte checks are conservative heuristics; a clean report does not establish that
+all files are portable or free of sensitive information.
 
 The current CLI uses a fixed warning threshold: repositories with no findings
 exit `0`, any warning (including a risky file in a clean worktree) results in
