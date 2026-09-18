@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -113,10 +113,10 @@ for (const state of ["untracked", "staged", "modified", "deleted", "renamed", "m
 test("CLI ignores intentionally ignored untracked files", async (t) => {
   const f = await fixture(t);
   f.init();
-  await writeFile(join(f.directory, ".gitignore"), "ignored.txt\n");
+  await writeFile(join(f.directory, ".gitignore"), ".env\n");
   f.git(["add", ".gitignore"]);
   f.git(["commit", "--quiet", "-m", "ignore fixture"]);
-  await writeFile(join(f.directory, "ignored.txt"), "ignored\n");
+  await writeFile(join(f.directory, ".env"), "ignored\n");
   assertClean(f.cli());
 });
 
@@ -168,4 +168,83 @@ test("CLI reports missing Git on stderr and exits 2", async (t) => {
   assert.equal(result.status, 2);
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /Repository scan could not start\./);
+});
+
+const sensitiveFixtureContent = "DO_NOT_PRINT_FIXTURE_CREDENTIAL_726491";
+
+function assertRiskyPaths(result: SpawnSyncReturns<string>, paths: string[]) {
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.stderr, "");
+  assert.equal(result.stdout.match(/\[WARNING\] risky-tracked-file/g)?.length, paths.length);
+  assert.deepEqual(
+    result.stdout.split(/\r?\n/).filter((line) => line.startsWith("Path: "))
+      .map((line) => line.slice(6)),
+    paths
+  );
+  assert.doesNotMatch(result.stdout, /git-cleanliness|No findings/);
+  assert.equal((result.stdout + result.stderr).includes(sensitiveFixtureContent), false);
+}
+
+for (const path of [
+  ".env", ".env.production", "id_ed25519", "private-key.pem",
+  "client.p12", "client.pfx", "nested directory/.ENV.Production"
+]) {
+  test(`CLI warns about committed ${path} without revealing contents`, async (t) => {
+    const f = await fixture(t);
+    f.init();
+    const file = join(f.directory, ...path.split("/"));
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, sensitiveFixtureContent);
+    f.git(["add", "--", path]);
+    f.git(["commit", "--quiet", "-m", "risky path fixture"]);
+    assertRiskyPaths(f.cli(), [path]);
+  });
+}
+
+test("CLI accepts committed ordinary files, env templates, and public certificates", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  for (const path of [
+    "README.md", "auth.json", "config.json", "settings.yml",
+    ".env.example", ".env.sample", ".env.template", ".env.production.example",
+    "public.crt", "public.cer", "public.pem", "id_rsa.pub"
+  ]) {
+    await writeFile(join(f.directory, path), sensitiveFixtureContent);
+  }
+  f.git(["add", "."]);
+  f.git(["commit", "--quiet", "-m", "ordinary paths fixture"]);
+  assertClean(f.cli());
+});
+
+test("CLI reports multiple risky paths in deterministic order", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  for (const path of ["secrets.json", "nested/.env.production", ".aws/config"]) {
+    const file = join(f.directory, ...path.split("/"));
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, sensitiveFixtureContent);
+  }
+  f.git(["add", "."]);
+  f.git(["commit", "--quiet", "-m", "multiple risky paths fixture"]);
+  const first = f.cli();
+  assertRiskyPaths(first, [".aws/config", "nested/.env.production", "secrets.json"]);
+  assert.equal(f.cli().stdout, first.stdout);
+});
+
+test("CLI reports a force-tracked ignored env file alongside the cleanliness warning", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  await writeFile(join(f.directory, ".gitignore"), ".env\n");
+  f.git(["add", ".gitignore"]);
+  f.git(["commit", "--quiet", "-m", "ignore fixture"]);
+  await writeFile(join(f.directory, ".env"), sensitiveFixtureContent);
+  f.git(["add", "--force", ".env"]);
+  const result = f.cli();
+  assert.equal(result.status, 1);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /\n2 findings:\r?\n/);
+  assert.equal(result.stdout.match(/\[WARNING\] git-cleanliness/g)?.length, 1);
+  assert.equal(result.stdout.match(/\[WARNING\] risky-tracked-file/g)?.length, 1);
+  assert.match(result.stdout, /\nPath: \.env\r?\n/);
+  assert.equal((result.stdout + result.stderr).includes(sensitiveFixtureContent), false);
 });

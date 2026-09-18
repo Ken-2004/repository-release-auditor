@@ -106,7 +106,7 @@ The exit-code contract is:
 
 ## Project status
 
-Phase 1: Git working-tree cleanliness auditing.
+Phase 2: Git cleanliness and risky tracked-file path auditing.
 
 The current implementation can:
 
@@ -121,8 +121,38 @@ The `git-cleanliness` rule reports one warning when the repository has staged,
 modified, deleted, renamed, or untracked files, including dirty submodules.
 Intentionally ignored untracked files do not produce findings.
 
-The current CLI uses a fixed warning threshold: clean repositories exit `0`,
-dirty repositories exit `1`, and runtime, argument, or tooling failures exit `2`.
+The `risky-tracked-file` rule reports one warning per matching tracked path,
+including staged files. It only checks paths from Git's index; it does not read
+file contents, scan Git history, or inspect files inside submodules. This is
+repository-hygiene detection, not a comprehensive secret scanner or security
+certification. A warning means the filename warrants review, not that a secret
+has been confirmed.
+
+Matching is case-insensitive and uses normalized Git paths (`/` separators) at
+any directory depth:
+
+- `.env` and `.env.*`, except names with a dot-separated `example`, `sample`,
+  `template`, or `dist` segment after `.env` (for example `.env.example`,
+  `.env.production.sample`, and `.env.template.local`).
+- Exact filenames: `.npmrc`, `.pypirc`, `.netrc`, `_netrc`, `credentials.json`,
+  `service-account.json`, `service-account-key.json`, `account-key.json`,
+  `secrets.json`, `secrets.yml`, `secrets.yaml`, `id_rsa`, `id_ed25519`, `id_dsa`,
+  `id_ecdsa`, and `private-key.pem`.
+- Files ending in `.p12`, `.pfx`, or `.key`.
+- `credentials` or `config` directly inside a `.aws` directory, including
+  nested locations such as `deploy/.aws/credentials`.
+
+Public `.crt`, `.cer`, `.pub`, and generic `.pem` files are not automatically
+flagged. Generic `auth`, `config`, or `settings` names do not match. Ignored,
+untracked files are excluded; tracked files still match even if an ignore rule
+would otherwise exclude them. Findings retain path casing and are sorted by
+path using a locale-independent order. No file contents or secret values are
+printed. Verify flagged files and, if needed, remove sensitive material from
+version control and history and rotate exposed credentials.
+
+The current CLI uses a fixed warning threshold: repositories with no findings
+exit `0`, any warning (including a risky file in a clean worktree) results in
+exit `1`, and runtime, argument, or tooling failures exit `2`.
 Completed reports go to stdout; failures go to stderr.
 
 ## Documentation
