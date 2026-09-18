@@ -106,7 +106,8 @@ The exit-code contract is:
 
 ## Project status
 
-Phase 3: Git cleanliness, risky tracked files, and developer-machine paths.
+Phase 4: Git cleanliness, risky tracked files, developer-machine paths, and
+suspicious tracked build outputs.
 
 The current implementation can:
 
@@ -183,6 +184,32 @@ or surrounding lines are printed. Replace flagged paths with relative paths,
 environment variables, configuration, or documented placeholders. Filename and
 byte checks are conservative heuristics; a clean report does not establish that
 all files are portable or free of sensitive information.
+
+The `suspicious-build-output` rule checks tracked Git paths only and reports one
+warning per matching path. It does not read file contents or determine whether a
+file is actually binary, generated, or malicious. Generated and compiled files
+may be intentionally versioned; this is a repository-hygiene check, not malware
+detection or a claim that binaries are inherently unsafe.
+
+Matching uses normalized POSIX Git paths and case-insensitive comparisons:
+
+- Exact directory segments at any depth: `node_modules`, `coverage`, `.next`,
+  `.nuxt`, `__pycache__`, `obj`, `dist`, and `build`.
+- Files below `target/debug/` or `target/release/`, including nested Cargo
+  projects. A bare `target` directory does not qualify by itself.
+- Exact final filename extensions: `.o`, `.obj`, `.class`, `.pyc`, `.pyo`,
+  `.exe`, `.dll`, `.so`, and `.dylib`.
+
+Words in filenames such as `src/build.ts`, `docs/coverage.md`, or
+`config/dist-config.json` do not match. Archives (including `.jar`), documents,
+and media do not match solely by extension, but can match a generated directory
+such as `dist/manual.pdf`. `.git` metadata paths are excluded. Untracked files
+are excluded, including ignored output; tracked files still qualify even if an
+ignore rule matches them. Findings retain path casing, are deduplicated, and
+use locale-independent path ordering. Verify whether each artifact is
+intentionally versioned; otherwise remove it from Git and add an appropriate
+ignore rule. Custom output folders, Cargo profiles, and unlisted extensions
+(including versioned suffixes such as `.so.1`) are not inferred.
 
 The current CLI uses a fixed warning threshold: repositories with no findings
 exit `0`, any warning (including a risky file in a clean worktree) results in

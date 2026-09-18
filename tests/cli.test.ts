@@ -319,3 +319,74 @@ test("CLI does not scan ignored or untracked text files", async (t) => {
   assertDirty(result);
   assert.doesNotMatch(result.stdout, /developer-machine-path|alice|bob/);
 });
+
+test("CLI warns about tracked generated and compiled paths in deterministic order", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  const paths = [
+    "node_modules/package/index.js", "coverage/lcov.info", ".next/server/app.js",
+    "__pycache__/module.pyc", "obj/project.obj", "dist/app.js", "build/app.exe",
+    "lib/native.DLL", "lib/native.so", "lib/native.dylib", "lib/Main.class",
+    "packages/web/.nuxt/app.js", "crate/target/release/app"
+  ];
+  for (const path of paths) {
+    const file = join(f.directory, ...path.split("/"));
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, "fixture\n");
+  }
+  f.git(["add", "."]);
+  f.git(["commit", "--quiet", "-m", "generated paths fixture"]);
+  const result = f.cli();
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /\n13 findings:\r?\n/);
+  assert.equal(result.stdout.match(/\[WARNING\] suspicious-build-output/g)?.length, paths.length);
+  assert.deepEqual(
+    result.stdout.split(/\r?\n/).filter((line) => line.startsWith("Path: ")).map((line) => line.slice(6)),
+    paths.toSorted()
+  );
+  assert.doesNotMatch(result.stdout, /git-cleanliness|risky-tracked-file|developer-machine-path/);
+  assert.equal(f.cli().stdout, result.stdout);
+});
+
+test("CLI accepts ordinary source paths, archives, documents, and media", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  for (const path of [
+    "src/build.ts", "docs/coverage.md", "config/dist-config.json", "examples/target.ts",
+    "tests/build.ts", "fixtures/build.ts", "assets/coverage.md", "release.zip",
+    "assets/release.tar", "assets/release.gz", "assets/library.jar", "docs/guide.pdf",
+    "assets/image.png", "assets/audio.mp3", "assets/video.mp4"
+  ]) {
+    const file = join(f.directory, ...path.split("/"));
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, "dist/app.js\n"); // Suspicious paths in contents do not trigger this rule.
+  }
+  f.git(["add", "."]);
+  f.git(["commit", "--quiet", "-m", "ordinary paths fixture"]);
+  assertClean(f.cli());
+});
+
+test("CLI excludes ignored and untracked generated paths but detects force-tracked output", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  await writeFile(join(f.directory, ".gitignore"), "dist/\n");
+  f.git(["add", ".gitignore"]);
+  f.git(["commit", "--quiet", "-m", "ignore fixture"]);
+  await mkdir(join(f.directory, "dist"));
+  await writeFile(join(f.directory, "dist", "app.js"), "fixture\n");
+  assertClean(f.cli());
+  await mkdir(join(f.directory, "build"));
+  await writeFile(join(f.directory, "build", "app.exe"), "fixture\n");
+  const untracked = f.cli();
+  assertDirty(untracked);
+  assert.doesNotMatch(untracked.stdout, /suspicious-build-output/);
+  f.git(["add", "--force", "dist/app.js"]);
+  const tracked = f.cli();
+  assert.equal(tracked.status, 1);
+  assert.equal(tracked.stderr, "");
+  assert.match(tracked.stdout, /\n2 findings:\r?\n/);
+  assert.equal(tracked.stdout.match(/\[WARNING\] suspicious-build-output/g)?.length, 1);
+  assert.match(tracked.stdout, /\nPath: dist\/app\.js\r?\n/);
+  assert.doesNotMatch(tracked.stdout, /Path: build\/app\.exe/);
+});
