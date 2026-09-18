@@ -1,0 +1,171 @@
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test, { type TestContext } from "node:test";
+import { fileURLToPath } from "node:url";
+
+const cliPath = fileURLToPath(new URL("../src/cli.js", import.meta.url));
+
+async function fixture(t: TestContext) {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "repository auditor cli-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true, maxRetries: 3 }));
+  const directory = join(temporaryRoot, "repository");
+  const emptyConfig = join(temporaryRoot, "empty-config");
+  await mkdir(directory);
+  await writeFile(emptyConfig, "");
+
+  // Keep the real PATH, but isolate Git from the caller's repository and config.
+  const env: NodeJS.ProcessEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !/^GIT_/i.test(key))
+  );
+  env.GIT_CONFIG_NOSYSTEM = "1";
+  env.GIT_CONFIG_GLOBAL = emptyConfig;
+  env.GIT_CEILING_DIRECTORIES = temporaryRoot;
+  env.GIT_TERMINAL_PROMPT = "0";
+  env.LC_ALL = "C";
+
+  function git(args: string[], cwd = directory): string {
+    return execFileSync("git", [
+      "-c", "user.name=Repository Auditor Test",
+      "-c", "user.email=repository-auditor@example.invalid",
+      ...args
+    ], { cwd, env, encoding: "utf8", windowsHide: true, stdio: "pipe" });
+  }
+
+  function cli(args: string[] = [directory], cliEnv = env) {
+    const result = spawnSync(process.execPath, [cliPath, ...args], {
+      cwd: directory,
+      env: cliEnv,
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 30_000
+    });
+    assert.ifError(result.error);
+    assert.equal(result.signal, null);
+    return result;
+  }
+
+  function init(cwd = directory) {
+    git(["init", "--quiet", "--template=", "-b", "main"], cwd);
+    git(["config", "core.autocrlf", "false"], cwd);
+    git(["config", "core.excludesFile", emptyConfig], cwd);
+    git(["config", "core.attributesFile", emptyConfig], cwd);
+  }
+
+  async function commitFile() {
+    await writeFile(join(directory, "tracked.txt"), "original\n");
+    git(["add", "tracked.txt"]);
+    git(["commit", "--quiet", "-m", "fixture"]);
+  }
+
+  return { directory, env, git, cli, init, commitFile };
+}
+
+function assertClean(result: SpawnSyncReturns<string>) {
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /\nNo findings\.\r?\n$/);
+  assert.doesNotMatch(result.stdout, /git-cleanliness/);
+  assert.equal(result.stderr, "");
+}
+
+function assertDirty(result: SpawnSyncReturns<string>) {
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stdout, /\n1 finding:\r?\n/);
+  assert.equal(result.stdout.match(/\[WARNING\] git-cleanliness/g)?.length, 1);
+  assert.doesNotMatch(result.stdout, /No findings/);
+  assert.equal(result.stderr, "");
+}
+
+test("CLI reports no findings for unborn, committed, and detached clean repositories", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  assertClean(f.cli());
+  await f.commitFile();
+  assertClean(f.cli([])); // The default path is the child process's cwd.
+  f.git(["checkout", "--quiet", "--detach"]);
+  assertClean(f.cli());
+});
+
+for (const state of ["untracked", "staged", "modified", "deleted", "renamed", "mixed"] as const) {
+  test(`CLI reports one warning for ${state} changes`, async (t) => {
+    const f = await fixture(t);
+    f.init();
+    await f.commitFile();
+    if (state === "untracked" || state === "mixed") {
+      f.git(["config", "status.showUntrackedFiles", "no"]);
+      await writeFile(join(f.directory, "untracked file.txt"), "new\n");
+    }
+    if (state === "modified" || state === "staged" || state === "mixed") {
+      await writeFile(join(f.directory, "tracked.txt"), "changed\n");
+      if (state !== "modified") f.git(["add", "tracked.txt"]);
+    }
+    if (state === "deleted") await rm(join(f.directory, "tracked.txt"));
+    if (state === "renamed") {
+      await rename(join(f.directory, "tracked.txt"), join(f.directory, "renamed file.txt"));
+      f.git(["add", "-A"]);
+    }
+    assertDirty(f.cli());
+  });
+}
+
+test("CLI ignores intentionally ignored untracked files", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  await writeFile(join(f.directory, ".gitignore"), "ignored.txt\n");
+  f.git(["add", ".gitignore"]);
+  f.git(["commit", "--quiet", "-m", "ignore fixture"]);
+  await writeFile(join(f.directory, "ignored.txt"), "ignored\n");
+  assertClean(f.cli());
+});
+
+test("CLI detects dirty submodules even when Git config hides them", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  const nested = join(f.directory, "nested");
+  await mkdir(nested);
+  f.init(nested);
+  await writeFile(join(nested, "file.txt"), "original\n");
+  f.git(["add", "file.txt"], nested);
+  f.git(["commit", "--quiet", "-m", "nested fixture"], nested);
+  const head = f.git(["rev-parse", "HEAD"], nested).trim();
+  await writeFile(join(f.directory, ".gitmodules"), '[submodule "nested"]\n\tpath = nested\n\turl = ./nested\n\tignore = all\n');
+  f.git(["add", ".gitmodules"]);
+  f.git(["update-index", "--add", "--cacheinfo", `160000,${head},nested`]);
+  f.git(["commit", "--quiet", "-m", "submodule fixture"]);
+  assertClean(f.cli());
+  await writeFile(join(nested, "file.txt"), "changed\n");
+  assertDirty(f.cli());
+});
+
+test("CLI reports non-Git directories on stderr and exits 2", async (t) => {
+  const f = await fixture(t);
+  const result = f.cli();
+  assert.equal(result.status, 2);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /Repository scan could not start\./);
+});
+
+for (const args of [["--unknown-option"], [".", "extra-path"]]) {
+  test(`CLI rejects invalid arguments: ${args.join(" ")}`, async (t) => {
+    const f = await fixture(t);
+    f.init();
+    const result = f.cli(args);
+    assert.equal(result.status, 2);
+    assert.equal(result.stdout, "");
+    assert.notEqual(result.stderr, "");
+  });
+}
+
+test("CLI reports missing Git on stderr and exits 2", async (t) => {
+  const f = await fixture(t);
+  const env = Object.fromEntries(
+    Object.entries(f.env).filter(([key]) => key.toUpperCase() !== "PATH")
+  );
+  env.PATH = f.directory;
+  const result = f.cli([], env);
+  assert.equal(result.status, 2);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /Repository scan could not start\./);
+});

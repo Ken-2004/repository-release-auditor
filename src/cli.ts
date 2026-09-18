@@ -3,8 +3,12 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
+import { runAudit } from "./core/audit.js";
+import { findingsMeetThreshold } from "./core/exit-policy.js";
 import { GitCommandError } from "./git/git.js";
 import { getRepositorySnapshot } from "./git/snapshot.js";
+import { formatTextReport } from "./reporters/text.js";
+import { gitCleanlinessRule } from "./rules/git-cleanliness.js";
 
 const VERSION = "0.1.0";
 
@@ -49,19 +53,30 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (positionals.length > 1) {
+    console.error("Expected at most one repository path.");
+    process.exitCode = 2;
+    return;
+  }
+
   const requestedPath = positionals[0] ?? process.cwd();
   const repositoryPath = resolve(requestedPath);
 
   try {
-    const snapshot = await getRepositorySnapshot(repositoryPath);
+    const repository = await getRepositorySnapshot(repositoryPath);
 
-    console.log(`Repository Release Auditor ${VERSION}`);
-    console.log(`Repository: ${snapshot.root}`);
-    console.log(`Branch: ${snapshot.branch ?? "(detached)"}`);
-    console.log(`HEAD: ${snapshot.head ?? "(no commits)"}`);
-    console.log(`Tracked files: ${snapshot.trackedFiles.length}`);
-    console.log(`Working tree: ${snapshot.isDirty ? "dirty" : "clean"}`);
-    console.log("No audit rules are implemented yet.");
+    const findings = runAudit(
+      { repository },
+      [gitCleanlinessRule]
+    );
+
+    console.log(
+      formatTextReport(repository.root, findings)
+    );
+
+    if (findingsMeetThreshold(findings, "warning")) {
+      process.exitCode = 1;
+    }
   } catch (error: unknown) {
     if (error instanceof GitCommandError) {
       console.error("Repository scan could not start.");
@@ -75,12 +90,13 @@ async function main(): Promise<void> {
       return;
     }
 
-    throw error;
+    console.error("Unexpected runtime error.");
+    console.error(error);
+    process.exitCode = 2;
   }
 }
 
 main().catch((error: unknown) => {
-  console.error("Unexpected runtime error.");
-  console.error(error);
+  console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 2;
 });

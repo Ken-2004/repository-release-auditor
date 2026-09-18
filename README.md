@@ -98,7 +98,7 @@ node dist/src/cli.js .
 
 ## Exit codes
 
-The planned v1 contract is:
+The exit-code contract is:
 
 - `0` — scan completed and no finding met the configured failure threshold
 - `1` — scan completed and one or more findings met the failure threshold
@@ -106,7 +106,7 @@ The planned v1 contract is:
 
 ## Project status
 
-Phase 0: architecture and project foundation.
+Phase 1: Git working-tree cleanliness auditing.
 
 The current implementation can:
 
@@ -117,7 +117,13 @@ The current implementation can:
 - detect a dirty working tree
 - distinguish a non-Git directory as a runtime error
 
-Audit rules are not implemented yet.
+The `git-cleanliness` rule reports one warning when the repository has staged,
+modified, deleted, renamed, or untracked files, including dirty submodules.
+Intentionally ignored untracked files do not produce findings.
+
+The current CLI uses a fixed warning threshold: clean repositories exit `0`,
+dirty repositories exit `1`, and runtime, argument, or tooling failures exit `2`.
+Completed reports go to stdout; failures go to stderr.
 
 ## Documentation
 

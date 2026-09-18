@@ -56,6 +56,7 @@ export async function getRepositorySnapshot(
     "status",
     "--porcelain=v1",
     "-z",
+    "--ignore-submodules=none",
     "--untracked-files=all"
   ]);
 
