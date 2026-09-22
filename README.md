@@ -145,6 +145,13 @@ Run tests:
 npm test
 ```
 
+The GitHub Actions workflow in `.github/workflows/ci.yml` is designed to verify
+Node.js 24 on `windows-latest` and `ubuntu-latest` for pushes and pull requests
+to `main`. It installs with `npm ci`, checks types, runs tests and `npm audit`,
+builds, and requires a clean working tree and successful text/JSON self-audits.
+Ubuntu remains unverified until the workflow runs on GitHub and both matrix
+jobs pass.
+
 Run the current development CLI:
 
 ```text
