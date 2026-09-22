@@ -99,6 +99,57 @@ It will not:
 - follow symlinks outside the repository
 - print complete secret-like values
 
+### Git inspection boundary
+
+Auditing requires Git **2.36 or newer** from a trusted installation. The CLI
+resolves Git through absolute `PATH` entries outside the target repository; it
+does not use the target's executables or relative `PATH` entries. The caller's
+runtime, `PATH`, home/configuration locations, and installed Git are trusted.
+This is not a sandbox for arbitrary Git installations or a repository being
+changed concurrently during inspection.
+
+Inherited `GIT_*` variables and `SUDO_UID` are discarded so they cannot redirect
+the scan through alternate repositories, worktrees, indexes, objects, or injected
+configuration. Ordinary system/global configuration and Git's ownership and
+`safe.directory` protections remain in effect. A configured worktree redirect
+outside the repository discovered from the requested location is refused;
+ordinary subdirectory invocation and linked worktrees remain supported.
+
+Git stdout is captured as bytes and must be valid UTF-8 before any decoding or
+filename preflight. Unsupported encodings refuse the entire inspection with
+exit `2`; filenames are never silently skipped or replacement-decoded. This
+also applies inside initialized submodules. Valid Unicode, including a literal
+U+FFFD replacement character, is preserved without normalization. Raw Git stderr
+is discarded rather than decoded or printed.
+
+Each Git command disables hooks, fsmonitor, the untracked cache, pagers, prompts,
+optional index writes, replacement refs, lazy fetching, and transport access.
+Before status inspection, the CLI checks effective configuration and tracked
+attributes, including included and worktree configuration. Any tracked `filter`
+attribute is refused, including unset or boolean attributes; installed but
+unused filter configuration alone is allowed. Repositories using active Git LFS
+attributes therefore cannot currently be audited.
+
+Sparse checkouts/indexes, assume-unchanged or skip-worktree entries,
+`core.ignoreStat`, and partial-clone/promisor configuration are also refused.
+The auditor does not alter repository configuration or index flags to enable a
+scan. Initialized tracked submodules receive the same recursive safety checks
+before their dirty state is inspected; their file contents are not scanned by
+the audit rules.
+
+Git commands have a 10-second time limit and a 10 MiB limit per output stream.
+Git execution has a 60-second budget per inspection and at most 512 commands,
+with submodule traversal bounded to depth 16 and 128 repositories including the
+root. Unsafe, unsupported, failed, or
+incomplete Git inspection exits `2`, emits a concise diagnostic without raw Git
+output, and produces no partial report. These budgets do not provide process-tree
+isolation for an untrusted Git installation.
+
+The cleanliness result follows Git's status semantics, including stat caching
+and content normalization. A clean status does not prove that worktree and index
+bytes are identical. These checks assume the target and its configuration remain
+stable during the scan.
+
 ## Architecture
 
 The processing flow is:
@@ -118,8 +169,9 @@ Git is the source of truth for repository state and tracked-file discovery.
 
 ## Local package use
 
-Requires Node.js **24** (`>=24 <25`), npm, and Git on `PATH`. There are no runtime
-dependencies. The package and command name is `repository-release-auditor`;
+Requires Node.js **24** (`>=24 <25`), npm, and Git **2.36 or newer** on `PATH`.
+There are no runtime dependencies. The package and command name is
+`repository-release-auditor`;
 npm name availability must be rechecked immediately before npm publication.
 
 From a checkout with development dependencies installed, inspect the package:
@@ -167,7 +219,7 @@ Requirements:
 
 - Node.js 24
 - npm
-- Git
+- Git 2.36 or newer
 
 Install dependencies:
 

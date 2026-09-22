@@ -1,4 +1,5 @@
-import { runGit, tryGit } from "./git.js";
+import { createGitClient } from "./git.js";
+import { findRepositoryRoot, inspectRepository } from "./inspection.js";
 
 export interface GitRepositorySnapshot {
   root: string;
@@ -20,39 +21,20 @@ function splitNullDelimited(value: string): string[] {
 export async function getRepositorySnapshot(
   cwd: string
 ): Promise<GitRepositorySnapshot> {
-  const rootOutput = await runGit(cwd, [
-    "rev-parse",
-    "--show-toplevel"
-  ]);
+  const requestedRoot = await findRepositoryRoot(cwd);
+  const git = await createGitClient(requestedRoot);
+  // Preflight the complete initialized submodule tree before status is allowed
+  // to inspect it. Command overrides propagate to Git's child processes.
+  const { root, head, trackedFiles } = await inspectRepository(git, requestedRoot);
 
-  const root = rootOutput.trim();
-
-  const branchOutput = await runGit(root, [
+  const branchOutput = await git.run(root, [
     "branch",
     "--show-current"
   ]);
 
   const branch = branchOutput.trim() || null;
 
-  const headResult = await tryGit(root, [
-    "rev-parse",
-    "--verify",
-    "HEAD"
-  ]);
-
-  const head =
-    headResult.ok && headResult.stdout.trim().length > 0
-      ? headResult.stdout.trim()
-      : null;
-
-  const trackedOutput = await runGit(root, [
-    "ls-files",
-    "-z"
-  ]);
-
-  const trackedFiles = splitNullDelimited(trackedOutput);
-
-  const statusOutput = await runGit(root, [
+  const statusOutput = await git.run(root, [
     "status",
     "--porcelain=v1",
     "-z",
