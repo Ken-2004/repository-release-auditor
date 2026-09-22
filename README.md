@@ -2,9 +2,8 @@
 
 Repository Release Auditor is a local command-line tool for evidence-based Git repository release-hygiene checks.
 
-Version 0.1.0 is an initial release candidate. The source repository is intended
-to be public and open source under MIT once this documentation commit is pushed
-and GitHub visibility is changed. The package is not yet published to npm;
+Version 0.1.0 is an initial release candidate. The source repository is public
+and open source under MIT. The package is not yet published to npm;
 `package.json` retains `"private": true` pending separate npm publication approval.
 
 ## Goal
