@@ -2,14 +2,34 @@
   "name": "repository-release-auditor",
   "version": "0.1.0",
   "description": "Local CLI for evidence-based Git repository release-hygiene checks.",
+  "bin": {
+    "repository-release-auditor": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src/**/*.js",
+    "README.md",
+    "LICENSE",
+    "docs/DEPENDENCIES.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ken-2004/repository-release-auditor.git"
+  },
+  "homepage": "https://github.com/Ken-2004/repository-release-auditor#readme",
+  "bugs": {
+    "url": "https://github.com/Ken-2004/repository-release-auditor/issues"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/cli.js",
     "test": "npm run build && node --test dist/tests/*.test.js",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build -- --sourceMap false --declaration false --newLine lf",
+    "pack:check": "npm pack --dry-run"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["cli", "git", "repository-hygiene", "release", "audit"],
+  "author": "Harsh Prajapati",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=24 <25"

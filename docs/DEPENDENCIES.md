@@ -2,6 +2,10 @@
 
 This file records direct dependencies intentionally added to the project.
 
+The project is licensed under MIT; see [LICENSE](../LICENSE). Third-party
+dependencies retain their own licenses, recorded below. The project's license
+does not replace those terms.
+
 ## Development dependencies
 
 ### TypeScript

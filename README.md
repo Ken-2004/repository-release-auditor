@@ -2,7 +2,8 @@
 
 Repository Release Auditor is a local command-line tool for evidence-based Git repository release-hygiene checks.
 
-The project is currently in early development.
+Version 0.1.0 is an initial release candidate. It has not been published to npm;
+the package and GitHub repository remain private pending explicit publication approval.
 
 ## Goal
 
@@ -10,7 +11,7 @@ Help developers identify accidental publication and release-hygiene risks before
 
 The tool reports evidence and warnings. It does not claim that a repository is secure, legally compliant, or safe to publish.
 
-## Planned v1 checks
+## Implemented checks
 
 - Git working-tree cleanliness
 - risky tracked files and credential-bearing configuration files
@@ -18,7 +19,8 @@ The tool reports evidence and warnings. It does not claim that a repository is s
 - suspicious tracked build outputs and binaries
 - unusually large tracked files
 - configurable forbidden patterns
-- configurable allowlists and ignores
+
+Configurable allowlists and ignores remain future ideas and are not implemented.
 
 ## Output
 
@@ -98,7 +100,7 @@ It will not:
 
 ## Architecture
 
-The initial processing flow is:
+The processing flow is:
 
 ```text
 CLI
@@ -112,6 +114,50 @@ CLI
 ```
 
 Git is the source of truth for repository state and tracked-file discovery.
+
+## Local package use
+
+Requires Node.js **24** (`>=24 <25`), npm, and Git on `PATH`. There are no runtime
+dependencies. The package and command name is `repository-release-auditor`;
+npm name availability must be rechecked immediately before publication.
+
+From a checkout with development dependencies installed, inspect the package:
+
+```text
+npm run pack:check
+```
+
+`npm pack` and its dry run rebuild the JavaScript with LF line endings and no
+source maps. The whitelist includes only `dist/src/**/*.js`, `README.md`, `LICENSE`, and
+`docs/DEPENDENCIES.md`, plus npm's required `package.json`. Source, compiled tests,
+type declarations, source maps, CI files, and development artifacts are excluded.
+The standard MIT license is included in every package.
+
+For a local install, first create a package in an existing directory outside the
+checkout, then install that tarball into a separate test directory:
+
+```text
+npm pack --pack-destination ../package-output
+```
+
+From the separate test directory (adjust the tarball path as needed):
+
+```text
+npm install --no-save --package-lock=false ../package-output/repository-release-auditor-0.1.0.tgz
+npm exec --offline -- repository-release-auditor --help
+npm exec --offline -- repository-release-auditor --version
+npm exec --offline -- repository-release-auditor --format json ../repository-to-scan
+```
+
+The installed command is `repository-release-auditor [options] [path]`; omitted
+paths default to the current directory. Installing the tarball requires no
+TypeScript build or global installation. Keep packaging/install artifacts outside
+the repository being audited so they do not trigger the cleanliness rule.
+These instructions use a local tarball; no public npm release is available.
+
+Before public release, recheck npm name availability and obtain explicit approval
+to remove `"private": true`, make GitHub public, and perform the public release,
+tagging, and npm publication. Local packaging does not authorize those actions.
 
 ## Development
 
@@ -145,12 +191,12 @@ Run tests:
 npm test
 ```
 
-The GitHub Actions workflow in `.github/workflows/ci.yml` is designed to verify
+The GitHub Actions workflow in `.github/workflows/ci.yml` verifies
 Node.js 24 on `windows-latest` and `ubuntu-latest` for pushes and pull requests
 to `main`. It installs with `npm ci`, checks types, runs tests and `npm audit`,
 builds, and requires a clean working tree and successful text/JSON self-audits.
-Ubuntu remains unverified until the workflow runs on GitHub and both matrix
-jobs pass.
+The existing 140-test baseline has passed on both Windows and Ubuntu. Installed
+package verification is a separate release-readiness check.
 
 Run the current development CLI:
 
@@ -168,9 +214,9 @@ The exit-code contract is:
 
 ## Project status
 
-Phase 7: text and structured JSON reports for Git cleanliness, risky tracked files, developer-machine paths,
-suspicious tracked build outputs, unusually large tracked files, and configurable
-literal forbidden patterns.
+Initial release candidate 0.1.0: all six intended rule families and text/JSON
+reporting are implemented. Local packaging is supported under MIT; public
+publication remains gated as described above.
 
 The current implementation can:
 
@@ -234,7 +280,8 @@ every language or path representation.
 Content scanning is limited to **1 MiB (1,048,576 bytes) per file**. The reader
 accepts common source, documentation, and configuration text extensions plus
 explicit text filenames such as `README`, `Dockerfile`, `.gitignore`, and
-`.env` variants; the full list is in `src/files/tracked-text.ts`. It validates
+`.env` variants; the full list is in `src/files/tracked-text.ts` in the repository
+(packaged as `dist/src/files/tracked-text.js`). It validates
 UTF-8 (including ASCII and UTF-8 BOMs) and rejects binary control bytes before
 decoding. Unsupported extensions/encodings, binary-looking data, oversized
 files, missing worktree files, directories, and symlinks (including paths below
@@ -367,11 +414,11 @@ severity settings, and threshold configuration are not implemented.
 
 ## Documentation
 
-- `docs/PHASE0.md` — initial product and architecture decisions
+- `docs/PHASE0.md` (repository only) — initial product and architecture decisions
 - `docs/DEPENDENCIES.md` — direct dependency and license record
 
 ## License
 
-No project license has been selected yet.
+MIT — see [LICENSE](LICENSE).
 
-A license decision will be made deliberately before public release.
+Copyright (c) 2026 Harsh Prajapati.
