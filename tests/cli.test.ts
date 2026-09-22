@@ -556,3 +556,123 @@ test("CLI safely refuses configuration pointing outside through a junction or sy
   assert.match(result.stderr, /Configuration error:/);
   assert.equal(result.stderr.includes(outside), false);
 });
+
+test("CLI text is the default and explicit text preserves the exact existing output", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  assertClean(f.cli());
+  assert.equal(f.cli(["--format", "text"]).stdout, f.cli().stdout);
+  await writeFile(join(f.directory, "untracked.txt"), "ordinary");
+  assertDirty(f.cli(["--format", "text"]));
+  assert.equal(f.cli(["--format", "text"]).stdout, f.cli().stdout);
+});
+
+test("CLI JSON reports clean unborn, committed, and detached snapshots with stable metadata", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  const root = f.git(["rev-parse", "--show-toplevel"]).trim();
+  const unborn = f.cli(["--format", "json"]);
+  assert.equal(unborn.status, 0, unborn.stderr);
+  assert.equal(unborn.stderr, "");
+  assert.deepEqual(JSON.parse(unborn.stdout), {
+    schemaVersion: 1,
+    tool: { name: "repository-release-auditor", version: "0.1.0" },
+    repository: { root, branch: "main", head: null },
+    summary: { findingCount: 0, bySeverity: { info: 0, warning: 0, error: 0 } },
+    findings: []
+  });
+  await f.commitFile();
+  const head = f.git(["rev-parse", "HEAD"]).trim();
+  const committed = f.cli(["--format", "json"]);
+  assert.equal(committed.status, 0, committed.stderr);
+  assert.equal(committed.stderr, "");
+  assert.deepEqual(JSON.parse(committed.stdout).repository, { root, branch: "main", head });
+  for (const args of [["--json"], ["--format=json"], ["--json", "--format", "json"],
+    ["--format", "json", "--json"], ["--format", "json", "--format", "json"]]) {
+    const result = f.cli(args);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    assert.equal(result.stdout, committed.stdout);
+  }
+  f.git(["checkout", "--quiet", "--detach"]);
+  const detached = f.cli(["--json"]);
+  assert.equal(detached.status, 0, detached.stderr);
+  assert.deepEqual(JSON.parse(detached.stdout).repository, { root, branch: null, head });
+});
+
+test("CLI JSON warnings preserve redaction, pipeline order, summaries, and exit 1", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  const machinePath = ["C:", "Users", "PrivateJsonUser", "PrivateJsonProject"].join("\\");
+  const unrelated = ["private", "surrounding", "json", "fixture"].join("_");
+  await writeFile(join(f.directory, CONFIG_FILENAME), JSON.stringify({ forbiddenPatterns: [
+    { id: "private-marker", text: forbiddenFixtureValue }
+  ] }));
+  await mkdir(join(f.directory, "nested"));
+  await writeFile(join(f.directory, "nested", "paths.txt"), `${unrelated}\n${machinePath}`);
+  await writeFile(join(f.directory, "policy.txt"), `${unrelated}\n${forbiddenFixtureValue}`);
+  f.git(["add", "."]);
+  f.git(["commit", "--quiet", "-m", "json privacy fixture"]);
+  await writeFile(join(f.directory, "untracked.txt"), "ordinary");
+  const result = f.cli(["--format", "json"]);
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.stderr, "");
+  const report = JSON.parse(result.stdout);
+  assert.deepEqual(report.summary, { findingCount: 3, bySeverity: { info: 0, warning: 3, error: 0 } });
+  assert.equal(report.summary.findingCount, report.findings.length);
+  assert.deepEqual(report.findings.map((entry: { ruleId: string }) => entry.ruleId),
+    ["git-cleanliness", "developer-machine-path", "forbidden-pattern"]);
+  assert.equal(report.findings[1].path, "nested/paths.txt");
+  assert.equal(report.findings[1].evidence, "Line 2: Windows drive path; value redacted.");
+  assert.equal(report.findings[2].path, "policy.txt");
+  assert.equal(report.findings[2].evidence, 'Line 2: matched configured pattern "private-marker"; value redacted.');
+  assert.equal(result.stdout, f.cli(["--json"]).stdout);
+  for (const secret of [forbiddenFixtureValue, unrelated, "PrivateJsonUser", "PrivateJsonProject", "\u001b"]) {
+    assert.equal(result.stdout.includes(secret), false);
+  }
+  assert.deepEqual(Object.keys(report), ["schemaVersion", "tool", "repository", "summary", "findings"]);
+  assert.deepEqual(Object.keys(report.repository), ["root", "branch", "head"]);
+  assert.deepEqual(Object.keys(report.tool), ["name", "version"]);
+});
+
+for (const args of [
+  ["--format", "yaml"], ["--format", "JSON"], ["--format="], ["--format"],
+  ["--json", "--format", "text"], ["--format", "text", "--json"],
+  ["--format", "text", "--format", "json"], ["--format", "yaml", "--format", "json"]
+]) {
+  test(`CLI rejects invalid or conflicting formats: ${args.join(" ")}`, async (t) => {
+    const f = await fixture(t);
+    const result = f.cli(args);
+    assert.equal(result.status, 2);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /format/i);
+  });
+}
+
+test("CLI JSON failures leave stdout empty for non-Git, tooling, and configuration errors", async (t) => {
+  const f = await fixture(t);
+  const assertFailure = (result: SpawnSyncReturns<string>) => {
+    assert.equal(result.status, 2);
+    assert.equal(result.stdout, "");
+    assert.notEqual(result.stderr, "");
+  };
+  assertFailure(f.cli(["--json"]));
+  const env = Object.fromEntries(Object.entries(f.env).filter(([key]) => key.toUpperCase() !== "PATH"));
+  env.PATH = f.directory;
+  assertFailure(f.cli(["--format", "json"], env));
+  f.init();
+  await writeFile(join(f.directory, CONFIG_FILENAME), `{"forbiddenPatterns":"${forbiddenFixtureValue}"`);
+  const invalid = f.cli(["--json"]);
+  assertFailure(invalid);
+  assert.match(invalid.stderr, /Configuration error:/);
+  assert.equal(invalid.stderr.includes(forbiddenFixtureValue), false);
+});
+
+test("CLI help documents report formats and their default", async (t) => {
+  const f = await fixture(t);
+  const result = f.cli(["--help"]);
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /--format <text\|json>.*default: text/);
+  assert.match(result.stdout, /--json.*--format json/);
+});

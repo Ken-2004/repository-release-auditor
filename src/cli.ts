@@ -9,6 +9,7 @@ import { findingsMeetThreshold } from "./core/exit-policy.js";
 import { GitCommandError } from "./git/git.js";
 import { getRepositorySnapshot } from "./git/snapshot.js";
 import { formatTextReport } from "./reporters/text.js";
+import { formatJsonReport } from "./reporters/json.js";
 import { gitCleanlinessRule } from "./rules/git-cleanliness.js";
 import { riskyTrackedFileRule } from "./rules/risky-tracked-file.js";
 import { developerMachinePathRule } from "./rules/developer-machine-path.js";
@@ -28,6 +29,8 @@ Usage:
 Options:
   --help, -h       Show help
   --version, -v    Show version
+  --format <text|json>  Report format (default: text)
+  --json           Equivalent to --format json
 
 Arguments:
   path             Repository to inspect (default: current directory)
@@ -45,9 +48,25 @@ async function main(): Promise<void> {
       version: {
         type: "boolean",
         short: "v"
+      },
+      format: {
+        type: "string",
+        multiple: true
+      },
+      json: {
+        type: "boolean"
       }
     }
   });
+
+  const formats = values.format ?? [];
+  if (formats.some((format) => format !== "text" && format !== "json")) {
+    throw new Error("Expected --format text or --format json.");
+  }
+  if (new Set(formats).size > 1 || (values.json && formats.includes("text"))) {
+    throw new Error("Conflicting output formats; choose text or json.");
+  }
+  const format = values.json ? "json" : (formats[0] ?? "text");
 
   if (values.help) {
     printHelp();
@@ -79,7 +98,9 @@ async function main(): Promise<void> {
     );
 
     console.log(
-      formatTextReport(repository.root, findings)
+      format === "json"
+        ? formatJsonReport(repository, findings, { version: VERSION })
+        : formatTextReport(repository.root, findings)
     );
 
     if (findingsMeetThreshold(findings, "warning")) {

@@ -22,12 +22,66 @@ The tool reports evidence and warnings. It does not claim that a repository is s
 
 ## Output
 
-Planned v1 output formats:
+Supported output formats:
 
-- human-readable terminal report
-- structured JSON
+- human-readable terminal report (default, or `--format text`)
+- structured JSON (`--format json`, or `--json`)
 
-CI-friendly exit codes will distinguish findings from runtime or configuration errors.
+For example, after building:
+
+```text
+node dist/src/cli.js --format text .
+node dist/src/cli.js --format json .
+node dist/src/cli.js --json .
+```
+
+Format values are exactly `text` and `json`. Unknown values, missing values,
+`--json` combined with `--format text`, or conflicting repeated formats fail
+with exit `2`. `--json --format json` is valid. Text output remains unchanged.
+
+A completed JSON scan writes exactly one pretty-printed JSON document to stdout.
+For example, an empty, clean repository could produce:
+
+```json
+{
+  "schemaVersion": 1,
+  "tool": {
+    "name": "repository-release-auditor",
+    "version": "0.1.0"
+  },
+  "repository": {
+    "root": "/repository",
+    "branch": "main",
+    "head": null
+  },
+  "summary": {
+    "findingCount": 0,
+    "bySeverity": { "info": 0, "warning": 0, "error": 0 }
+  },
+  "findings": []
+}
+```
+
+`schemaVersion` is numeric and currently `1`; consumers should check it because
+the schema may evolve. `repository.root` is the absolute Git repository root,
+`branch` is a string or `null` for detached HEAD, and `head` is a commit ID or
+`null` for an unborn repository. Summary counts describe the entire findings
+array. Findings retain rule-pipeline order and contain `ruleId`, `category`,
+`severity` (`info`, `warning`, or `error`), `title`, and `message`. Optional
+`path`, `evidence`, and `remediation` strings are omitted when undefined.
+
+JSON contains only report metadata and existing redacted findings. It adds no
+source contents, configured forbidden text, timestamps, hostnames, environment
+variables, or machine metadata beyond the repository root. Evidence retains
+the existing redaction guarantees; paths and public policy IDs remain visible.
+No ANSI formatting is added. Identical snapshots and findings produce identical
+JSON.
+
+Exit codes are unchanged: completed clean scans exit `0`; findings meeting the
+fixed warning threshold exit `1`. Argument, configuration, runtime, and tooling
+failures exit `2`, write diagnostics to stderr, and emit no partial report on
+stdout. Errors are text diagnostics even when JSON was requested. `--help` and
+`--version` remain informational text commands rather than scan reports.
 
 ## Privacy and safety
 
@@ -107,7 +161,7 @@ The exit-code contract is:
 
 ## Project status
 
-Phase 6: Git cleanliness, risky tracked files, developer-machine paths,
+Phase 7: text and structured JSON reports for Git cleanliness, risky tracked files, developer-machine paths,
 suspicious tracked build outputs, unusually large tracked files, and configurable
 literal forbidden patterns.
 
