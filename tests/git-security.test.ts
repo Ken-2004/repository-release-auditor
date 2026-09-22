@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -209,7 +209,8 @@ test("Git inspection ignores inherited repository, index, object, and configurat
     process.env = { ...saved, ...injection };
     try {
       const snapshot = await getRepositorySnapshot(f.directory);
-      assert.equal(resolve(snapshot.root), resolve(f.directory));
+      assert.equal(await realpath(snapshot.root), await realpath(f.directory));
+      assert.notEqual(await realpath(snapshot.root), await realpath(other));
       assert.equal(snapshot.isDirty, true);
     } finally {
       process.env = saved;
@@ -281,7 +282,8 @@ test("Git inspection supports linked worktrees and requests from their subdirect
   const commonBefore = await state(f.directory);
 
   const clean = await getRepositorySnapshot(subdirectory);
-  assert.equal(resolve(clean.root), resolve(linked));
+  assert.equal(await realpath(clean.root), await realpath(linked));
+  assert.notEqual(await realpath(clean.root), await realpath(f.directory));
   assert.equal(clean.branch, "linked");
   assert.equal(clean.isDirty, false);
   await writeFile(join(linked, "tracked.txt"), "linked worktree changed\n");

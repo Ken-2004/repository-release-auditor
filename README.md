@@ -103,7 +103,11 @@ It will not:
 
 Auditing requires Git **2.36 or newer** from a trusted installation. The CLI
 resolves Git through absolute `PATH` entries outside the target repository; it
-does not use the target's executables or relative `PATH` entries. The caller's
+does not use the target's executables or relative `PATH` entries. The target
+root, executable candidates, and retained child `PATH` directories are resolved
+through the filesystem before containment checks; aliases into the target are
+excluded. Unavailable optional `PATH` entries are skipped, while an unresolved
+target root is refused. The caller's
 runtime, `PATH`, home/configuration locations, and installed Git are trusted.
 This is not a sandbox for arbitrary Git installations or a repository being
 changed concurrently during inspection.
