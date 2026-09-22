@@ -50,6 +50,7 @@ The initial processing flow is:
 CLI
 -> Git adapter
 -> repository snapshot
+-> repository configuration
 -> rule engine
 -> findings
 -> reporters
@@ -106,8 +107,9 @@ The exit-code contract is:
 
 ## Project status
 
-Phase 5: Git cleanliness, risky tracked files, developer-machine paths,
-suspicious tracked build outputs, and unusually large tracked files.
+Phase 6: Git cleanliness, risky tracked files, developer-machine paths,
+suspicious tracked build outputs, unusually large tracked files, and configurable
+literal forbidden patterns.
 
 The current implementation can:
 
@@ -234,8 +236,73 @@ optional alternatives, not requirements.
 
 The current CLI uses a fixed warning threshold: repositories with no findings
 exit `0`, any warning (including a risky file in a clean worktree) results in
-exit `1`, and runtime, argument, or tooling failures exit `2`.
+exit `1`, and runtime, configuration, argument, or tooling failures exit `2`.
 Completed reports go to stdout; failures go to stderr.
+
+## Repository policy: forbidden patterns
+
+Place optional configuration in `.repository-release-auditor.json` at the Git
+repository root. The CLI loads this fixed local file, even when invoked from a
+subdirectory. A missing file, `{}`, or an empty `forbiddenPatterns` array leaves
+forbidden-pattern scanning inactive; all other rules continue to run.
+
+```json
+{
+  "forbiddenPatterns": [
+    {
+      "id": "internal-domain",
+      "text": "internal.example.com",
+      "caseSensitive": false
+    },
+    {
+      "id": "temporary-marker",
+      "text": "DO_NOT_RELEASE"
+    }
+  ]
+}
+```
+
+The root must be an object with only the optional `forbiddenPatterns` array.
+Each entry requires `id` and `text`, and may include `caseSensitive`:
+
+- `id`: a unique, case-sensitive identifier matching
+  `[A-Za-z0-9][A-Za-z0-9._-]*`, at most 128 characters. IDs are public report
+  labels; do not put sensitive values in them.
+- `text`: a nonempty literal string, at most 1,024 UTF-16 code units, without
+  NUL. At most 100 patterns are allowed.
+- `caseSensitive`: a boolean, defaulting to `true`. With `false`, both strings
+  use JavaScript's locale-independent Unicode `toLowerCase()` before substring
+  matching. This is not full Unicode case folding or Unicode normalization.
+
+Unknown fields, invalid types, duplicates, invalid JSON, and exceeded limits
+are configuration failures (exit `2`, diagnostics on stderr). Diagnostics name
+fields or entry indexes without echoing configured text or unknown field names.
+Configuration must be a regular UTF-8 JSON text file of at most 1 MiB; symlinks,
+junctions, binary data, and paths resolving outside the repository are refused.
+The file need not be tracked to supply policy. No parent-directory search,
+environment interpolation, JavaScript execution, or network access occurs.
+
+The `forbidden-pattern` rule uses literal substring matching only: no regex,
+globs, replacements, or automatic fixes. It reads current worktree contents of
+Git-tracked text files through the same 1 MiB bounded reader described above.
+Binary, unsupported, oversized, missing, directory, and symlinked files are
+skipped. It does not scan Git history, staged blob contents, submodules, or
+ignored/untracked files. The root config file itself is excluded from this rule
+to avoid self-matches; other rules still inspect it. Nested files with the same
+name receive no exemption.
+
+Each matching file/pattern-ID pair produces one warning, ordered by path then
+ID using locale-independent ordering. Evidence reports the first matching line
+(supporting LF, CRLF, and CR), the pattern ID, and `value redacted`; neither the
+configured value nor surrounding source content is printed. Multiline strings
+match literally, without line-ending normalization. Warnings exit `1`. Review
+the location and remove or replace the prohibited text, or intentionally revise
+the repository policy.
+
+This feature expresses local repository-hygiene policy. It is not a secret
+scanner, DLP product, malware detector, or security certification; a clean
+result is not a security guarantee. Regex support, allowlists, ignore settings,
+severity settings, and threshold configuration are not implemented.
 
 ## Documentation
 

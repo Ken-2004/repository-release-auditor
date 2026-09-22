@@ -3,6 +3,7 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
+import { ConfigurationError, loadConfig } from "./config/load-config.js";
 import { runAudit } from "./core/audit.js";
 import { findingsMeetThreshold } from "./core/exit-policy.js";
 import { GitCommandError } from "./git/git.js";
@@ -13,6 +14,7 @@ import { riskyTrackedFileRule } from "./rules/risky-tracked-file.js";
 import { developerMachinePathRule } from "./rules/developer-machine-path.js";
 import { suspiciousBuildOutputRule } from "./rules/suspicious-build-output.js";
 import { largeTrackedFileRule } from "./rules/large-tracked-file.js";
+import { createForbiddenPatternRule } from "./rules/forbidden-pattern.js";
 
 const VERSION = "0.1.0";
 
@@ -68,10 +70,12 @@ async function main(): Promise<void> {
 
   try {
     const repository = await getRepositorySnapshot(repositoryPath);
+    const config = loadConfig(repository.root);
 
     const findings = runAudit(
       { repository },
-      [gitCleanlinessRule, riskyTrackedFileRule, developerMachinePathRule, suspiciousBuildOutputRule, largeTrackedFileRule]
+      [gitCleanlinessRule, riskyTrackedFileRule, developerMachinePathRule, suspiciousBuildOutputRule,
+        largeTrackedFileRule, createForbiddenPatternRule(config.forbiddenPatterns)]
     );
 
     console.log(
@@ -82,6 +86,11 @@ async function main(): Promise<void> {
       process.exitCode = 1;
     }
   } catch (error: unknown) {
+    if (error instanceof ConfigurationError) {
+      console.error(`Configuration error: ${error.message}`);
+      process.exitCode = 2;
+      return;
+    }
     if (error instanceof GitCommandError) {
       console.error("Repository scan could not start.");
       console.error(error.message);

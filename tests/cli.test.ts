@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { mkdir, mkdtemp, rename, rm, truncate, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { MAX_TEXT_FILE_BYTES } from "../src/files/tracked-text.js";
 import { LARGE_TRACKED_FILE_BYTES } from "../src/rules/large-tracked-file.js";
+import { CONFIG_FILENAME } from "../src/config/types.js";
 
 const cliPath = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 
@@ -447,4 +448,111 @@ test("CLI measures current worktree size and safely skips deleted or directory r
   assertDirty(f.cli());
   await mkdir(file);
   assertDirty(f.cli());
+});
+
+const forbiddenFixtureValue = ["Private", "CLI", "Policy", "Fixture"].join("_");
+
+test("CLI loads root configuration from a nested invocation and redacts sorted policy findings", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  const surrounding = ["unrelated", "confidential", "surrounding"].join("_");
+  await mkdir(join(f.directory, "nested"));
+  await writeFile(join(f.directory, CONFIG_FILENAME), JSON.stringify({ forbiddenPatterns: [
+    { id: "z-exact", text: forbiddenFixtureValue },
+    { id: "a-insensitive", text: forbiddenFixtureValue.toLowerCase(), caseSensitive: false }
+  ] }));
+  await writeFile(join(f.directory, "nested", "file.txt"), `${surrounding}\r\n${forbiddenFixtureValue} ${surrounding}\r\n${forbiddenFixtureValue}`);
+  await writeFile(join(f.directory, "a.txt"), forbiddenFixtureValue);
+  f.git(["add", "."]);
+  f.git(["commit", "--quiet", "-m", "policy fixture"]);
+  const result = f.cli([join(f.directory, "nested")]);
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /\n4 findings:\r?\n/);
+  assert.equal(result.stdout.match(/\[WARNING\] forbidden-pattern/g)?.length, 4);
+  assert.deepEqual([...result.stdout.matchAll(/Path: (.+)\r?\nEvidence: Line (\d+): matched configured pattern "([^"]+)"/g)]
+    .map((match) => [match[1]?.trim(), match[2], match[3]]), [
+    ["a.txt", "1", "a-insensitive"], ["a.txt", "1", "z-exact"],
+    ["nested/file.txt", "2", "a-insensitive"], ["nested/file.txt", "2", "z-exact"]
+  ]);
+  for (const privateText of [forbiddenFixtureValue, forbiddenFixtureValue.toLowerCase(), surrounding]) {
+    assert.equal((result.stdout + result.stderr).includes(privateText), false);
+  }
+  assert.equal(result.stdout.includes(CONFIG_FILENAME), false);
+});
+
+test("CLI preserves clean behavior for empty policies and case-sensitive mismatches", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  await writeFile(join(f.directory, "ordinary.txt"), forbiddenFixtureValue.toLowerCase());
+  for (const config of [{}, { forbiddenPatterns: [] }, {
+    forbiddenPatterns: [{ id: "exact", text: forbiddenFixtureValue }]
+  }]) {
+    await writeFile(join(f.directory, CONFIG_FILENAME), JSON.stringify(config));
+    f.git(["add", "."]);
+    f.git(["commit", "--quiet", "-m", "policy fixture"]);
+    assertClean(f.cli());
+  }
+});
+
+test("CLI policy scanning skips binary, oversized, ignored, and untracked content", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  await writeFile(join(f.directory, CONFIG_FILENAME), JSON.stringify({ forbiddenPatterns: [
+    { id: "marker", text: forbiddenFixtureValue }
+  ] }));
+  await writeFile(join(f.directory, ".gitignore"), "ignored.txt\n");
+  await writeFile(join(f.directory, "binary.txt"), Buffer.concat([Buffer.from([0]), Buffer.from(forbiddenFixtureValue)]));
+  await writeFile(join(f.directory, "oversized.txt"), forbiddenFixtureValue.padEnd(MAX_TEXT_FILE_BYTES + 1, "x"));
+  f.git(["add", "."]);
+  f.git(["commit", "--quiet", "-m", "skipped content fixture"]);
+  await writeFile(join(f.directory, "ignored.txt"), forbiddenFixtureValue);
+  assertClean(f.cli());
+  await writeFile(join(f.directory, "untracked.txt"), forbiddenFixtureValue);
+  assertDirty(f.cli());
+});
+
+const validPattern = { id: "marker", text: forbiddenFixtureValue };
+const invalidConfigs: [string, string][] = [
+  ["malformed JSON", `{"forbiddenPatterns":"${forbiddenFixtureValue}"`],
+  ...([
+    ["null root", null], ["array root", []], ["invalid array", { forbiddenPatterns: {} }],
+    ["non-object entry", { forbiddenPatterns: [null] }],
+    ["invalid ID", { forbiddenPatterns: [{ ...validPattern, id: "has space" }] }],
+    ["duplicate IDs", { forbiddenPatterns: [validPattern, validPattern] }],
+    ["empty text", { forbiddenPatterns: [{ ...validPattern, text: "" }] }],
+    ["NUL text", { forbiddenPatterns: [{ ...validPattern, text: `${forbiddenFixtureValue}\0` }] }],
+    ["invalid caseSensitive", { forbiddenPatterns: [{ ...validPattern, caseSensitive: "false" }] }],
+    ["excessive count", { forbiddenPatterns: Array.from({ length: 101 }, (_, i) => ({ ...validPattern, id: `id-${i}` })) }],
+    ["excessive length", { forbiddenPatterns: [{ ...validPattern, text: "x".repeat(1025) }] }],
+    ["unknown root field", { [forbiddenFixtureValue]: true }],
+    ["unknown pattern field", { forbiddenPatterns: [{ ...validPattern, [forbiddenFixtureValue]: true }] }]
+  ] satisfies [string, unknown][]).map(([name, config]): [string, string] => [name, JSON.stringify(config)])
+];
+
+for (const [name, config] of invalidConfigs) {
+  test(`CLI rejects ${name} with exit 2 and private stderr diagnostics`, async (t) => {
+    const f = await fixture(t);
+    f.init();
+    await writeFile(join(f.directory, CONFIG_FILENAME), config);
+    const result = f.cli();
+    assert.equal(result.status, 2);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /Configuration error: \.repository-release-auditor\.json:/);
+    assert.equal(result.stderr.includes(forbiddenFixtureValue), false);
+    assert.doesNotMatch(result.stderr, /SyntaxError| at /);
+  });
+}
+
+test("CLI safely refuses configuration pointing outside through a junction or symlink", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  const outside = join(dirname(f.directory), "outside-policy");
+  await mkdir(outside);
+  await symlink(outside, join(f.directory, CONFIG_FILENAME), process.platform === "win32" ? "junction" : "dir");
+  const result = f.cli();
+  assert.equal(result.status, 2);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /Configuration error:/);
+  assert.equal(result.stderr.includes(outside), false);
 });
