@@ -2,8 +2,10 @@
 
 Repository Release Auditor is a local command-line tool for evidence-based Git repository release-hygiene checks.
 
-Version 0.1.0 is an initial release candidate. It has not been published to npm;
-the package and GitHub repository remain private pending explicit publication approval.
+Version 0.1.0 is an initial release candidate. The source repository is intended
+to be public and open source under MIT once this documentation commit is pushed
+and GitHub visibility is changed. The package is not yet published to npm;
+`package.json` retains `"private": true` pending separate npm publication approval.
 
 ## Goal
 
@@ -119,7 +121,7 @@ Git is the source of truth for repository state and tracked-file discovery.
 
 Requires Node.js **24** (`>=24 <25`), npm, and Git on `PATH`. There are no runtime
 dependencies. The package and command name is `repository-release-auditor`;
-npm name availability must be rechecked immediately before publication.
+npm name availability must be rechecked immediately before npm publication.
 
 From a checkout with development dependencies installed, inspect the package:
 
@@ -155,9 +157,10 @@ TypeScript build or global installation. Keep packaging/install artifacts outsid
 the repository being audited so they do not trigger the cleanliness rule.
 These instructions use a local tarball; no public npm release is available.
 
-Before public release, recheck npm name availability and obtain explicit approval
-to remove `"private": true`, make GitHub public, and perform the public release,
-tagging, and npm publication. Local packaging does not authorize those actions.
+Publishing the source on GitHub does not publish the npm package. Before npm
+publication, recheck npm name availability and obtain explicit approval to remove
+`"private": true` and publish to npm. Creating tags or GitHub releases also requires
+separate approval. Local packaging does not authorize those actions.
 
 ## Development
 
@@ -215,8 +218,8 @@ The exit-code contract is:
 ## Project status
 
 Initial release candidate 0.1.0: all six intended rule families and text/JSON
-reporting are implemented. Local packaging is supported under MIT; public
-publication remains gated as described above.
+reporting are implemented. Local packaging is supported under MIT. GitHub source
+publication and npm package publication are separate steps, as described above.
 
 The current implementation can:
 
