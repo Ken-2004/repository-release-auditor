@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { MAX_TEXT_FILE_BYTES } from "../src/files/tracked-text.js";
+import { LARGE_TRACKED_FILE_BYTES } from "../src/rules/large-tracked-file.js";
 
 const cliPath = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 
@@ -389,4 +390,61 @@ test("CLI excludes ignored and untracked generated paths but detects force-track
   assert.equal(tracked.stdout.match(/\[WARNING\] suspicious-build-output/g)?.length, 1);
   assert.match(tracked.stdout, /\nPath: dist\/app\.js\r?\n/);
   assert.doesNotMatch(tracked.stdout, /Path: build\/app\.exe/);
+});
+
+test("CLI warns about a committed 50 MiB file with size-only evidence", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  await mkdir(join(f.directory, "nested"));
+  const file = join(f.directory, "nested", "Dataset.BIN");
+  await writeFile(file, sensitiveFixtureContent);
+  await truncate(file, LARGE_TRACKED_FILE_BYTES);
+  f.git(["add", "."]);
+  f.git(["commit", "--quiet", "-m", "large file fixture"]);
+  const result = f.cli();
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /\n1 finding:\r?\n/);
+  assert.equal(result.stdout.match(/\[WARNING\] large-tracked-file/g)?.length, 1);
+  assert.match(result.stdout, /\nPath: nested\/Dataset\.BIN\r?\n/);
+  assert.match(result.stdout, /\nEvidence: 52428800 bytes\r?\n/);
+  assert.doesNotMatch(result.stdout, /git-cleanliness|suspicious-build-output|developer-machine-path|risky-tracked-file/);
+  assert.equal((result.stdout + result.stderr).includes(sensitiveFixtureContent), false);
+});
+
+test("CLI does not consider ignored or untracked large files", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  await writeFile(join(f.directory, ".gitignore"), "ignored.bin\n");
+  f.git(["add", ".gitignore"]);
+  f.git(["commit", "--quiet", "-m", "ignore large file fixture"]);
+  await writeFile(join(f.directory, "ignored.bin"), "");
+  await truncate(join(f.directory, "ignored.bin"), LARGE_TRACKED_FILE_BYTES + 1);
+  assertClean(f.cli());
+  await writeFile(join(f.directory, "untracked.bin"), "");
+  await truncate(join(f.directory, "untracked.bin"), LARGE_TRACKED_FILE_BYTES + 1);
+  const result = f.cli();
+  assertDirty(result);
+  assert.doesNotMatch(result.stdout, /large-tracked-file/);
+});
+
+test("CLI measures current worktree size and safely skips deleted or directory replacements", async (t) => {
+  const f = await fixture(t);
+  f.init();
+  await f.commitFile();
+  assertClean(f.cli());
+  const file = join(f.directory, "tracked.txt");
+  await truncate(file, LARGE_TRACKED_FILE_BYTES + 1);
+  const grown = f.cli();
+  assert.equal(grown.status, 1);
+  assert.equal(grown.stderr, "");
+  assert.match(grown.stdout, /\[WARNING\] large-tracked-file/);
+  assert.match(grown.stdout, /Evidence: 52428801 bytes/);
+  assert.match(grown.stdout, /\n2 findings:\r?\n/);
+  await truncate(file, 0);
+  assertDirty(f.cli());
+  await rm(file);
+  assertDirty(f.cli());
+  await mkdir(file);
+  assertDirty(f.cli());
 });

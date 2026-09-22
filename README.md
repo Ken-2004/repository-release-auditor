@@ -106,8 +106,8 @@ The exit-code contract is:
 
 ## Project status
 
-Phase 4: Git cleanliness, risky tracked files, developer-machine paths, and
-suspicious tracked build outputs.
+Phase 5: Git cleanliness, risky tracked files, developer-machine paths,
+suspicious tracked build outputs, and unusually large tracked files.
 
 The current implementation can:
 
@@ -210,6 +210,27 @@ use locale-independent path ordering. Verify whether each artifact is
 intentionally versioned; otherwise remove it from Git and add an appropriate
 ignore rule. Custom output folders, Cargo profiles, and unlisted extensions
 (including versioned suffixes such as `.so.1`) are not inferred.
+
+The `large-tracked-file` rule warns about tracked regular files whose current
+worktree size is **at least 50 MiB** (`50 * 1024 * 1024 = 52,428,800 bytes`).
+Exactly 50 MiB qualifies; one byte below does not. This v1 threshold is fixed.
+The rule uses filesystem metadata only, regardless of filename or extension;
+it does not read file contents or launch a Git process for each file.
+
+Git determines which paths are tracked, including staged additions. Size means
+the current worktree file's logical byte length, not its disk allocation,
+compressed size, staged/index blob size, or historical Git blob size. Repository
+history is not scanned. Missing files, directories (including submodules), and
+symlinks are skipped, as are paths beneath symlinked directories or junctions.
+Repository-boundary checks prevent resolving tracked paths outside the root.
+Untracked and ignored-untracked files are not considered. Unexpected metadata
+errors remain runtime failures.
+
+Findings preserve Git path casing and have deterministic order, with one warning
+per qualifying path. Evidence contains only the measured size, such as
+`52428800 bytes`, never file contents. Large files may be appropriate to version;
+review whether they belong in Git. External artifact storage or Git LFS are
+optional alternatives, not requirements.
 
 The current CLI uses a fixed warning threshold: repositories with no findings
 exit `0`, any warning (including a risky file in a clean worktree) results in

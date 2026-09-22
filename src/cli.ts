@@ -12,6 +12,7 @@ import { gitCleanlinessRule } from "./rules/git-cleanliness.js";
 import { riskyTrackedFileRule } from "./rules/risky-tracked-file.js";
 import { developerMachinePathRule } from "./rules/developer-machine-path.js";
 import { suspiciousBuildOutputRule } from "./rules/suspicious-build-output.js";
+import { largeTrackedFileRule } from "./rules/large-tracked-file.js";
 
 const VERSION = "0.1.0";
 
@@ -70,7 +71,7 @@ async function main(): Promise<void> {
 
     const findings = runAudit(
       { repository },
-      [gitCleanlinessRule, riskyTrackedFileRule, developerMachinePathRule, suspiciousBuildOutputRule]
+      [gitCleanlinessRule, riskyTrackedFileRule, developerMachinePathRule, suspiciousBuildOutputRule, largeTrackedFileRule]
     );
 
     console.log(
