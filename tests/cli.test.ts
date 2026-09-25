@@ -645,7 +645,12 @@ for (const args of [
     const result = f.cli(args);
     assert.equal(result.status, 2);
     assert.equal(result.stdout, "");
-    assert.match(result.stderr, /format/i);
+    if (args.length === 1 && args[0] === "--format") {
+      // Parser failures use a fixed diagnostic rather than echoing arguments.
+      assert.equal(result.stderr, "Invalid command-line arguments. Use --help for usage.\n");
+    } else {
+      assert.match(result.stderr, /format/i);
+    }
   });
 }
 

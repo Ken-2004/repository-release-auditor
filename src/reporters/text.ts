@@ -1,4 +1,5 @@
 import type { Finding } from "../core/types.js";
+import { escapeTextDisplay } from "./escape.js";
 
 export function formatTextReport(
   repositoryRoot: string,
@@ -6,7 +7,7 @@ export function formatTextReport(
 ): string {
   const lines = [
     "Repository Release Auditor",
-    `Repository: ${repositoryRoot}`,
+    `Repository: ${escapeTextDisplay(repositoryRoot)}`,
     ""
   ];
 
@@ -22,25 +23,25 @@ export function formatTextReport(
 
   for (const finding of findings) {
     lines.push(
-      `[${finding.severity.toUpperCase()}] ${finding.ruleId}`,
-      finding.title,
-      finding.message
+      `[${escapeTextDisplay(finding.severity.toUpperCase())}] ${escapeTextDisplay(finding.ruleId)}`,
+      escapeTextDisplay(finding.title),
+      escapeTextDisplay(finding.message)
     );
 
     if (finding.path !== undefined) {
-      lines.push(`Path: ${finding.path}`);
+      lines.push(`Path: ${escapeTextDisplay(finding.path)}`);
     }
 
     if (finding.evidence !== undefined) {
-      lines.push(`Evidence: ${finding.evidence}`);
+      lines.push(`Evidence: ${escapeTextDisplay(finding.evidence)}`);
     }
 
     if (finding.remediation !== undefined) {
-      lines.push(`Remediation: ${finding.remediation}`);
+      lines.push(`Remediation: ${escapeTextDisplay(finding.remediation)}`);
     }
 
     lines.push("");
   }
 
-  return lines.join("\n").trimEnd();
+  return lines.slice(0, -1).join("\n");
 }

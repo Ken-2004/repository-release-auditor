@@ -1,5 +1,6 @@
 import type { Finding, Severity } from "../core/types.js";
 import type { GitRepositorySnapshot } from "../git/snapshot.js";
+import { escapeSerializedJson } from "./escape.js";
 
 export function formatJsonReport(
   repository: Pick<GitRepositorySnapshot, "root" | "branch" | "head">,
@@ -10,7 +11,7 @@ export function formatJsonReport(
   for (const finding of findings) bySeverity[finding.severity] += 1;
 
   // Project only report fields; never serialize configuration or the full snapshot.
-  return JSON.stringify({
+  return escapeSerializedJson(JSON.stringify({
     schemaVersion: 1,
     tool: { name: "repository-release-auditor", version: metadata.version },
     repository: { root: repository.root, branch: repository.branch, head: repository.head },
@@ -25,5 +26,5 @@ export function formatJsonReport(
       evidence: finding.evidence,
       remediation: finding.remediation
     }))
-  }, null, 2);
+  }, null, 2));
 }

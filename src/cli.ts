@@ -3,10 +3,10 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-import { ConfigurationError, loadConfig } from "./config/load-config.js";
+import { loadConfig } from "./config/load-config.js";
 import { runAudit } from "./core/audit.js";
 import { findingsMeetThreshold } from "./core/exit-policy.js";
-import { GitCommandError } from "./git/git.js";
+import { ArgumentError, formatDiagnostic } from "./diagnostics.js";
 import { getRepositorySnapshot } from "./git/snapshot.js";
 import { formatTextReport } from "./reporters/text.js";
 import { formatJsonReport } from "./reporters/json.js";
@@ -37,34 +37,43 @@ Arguments:
 `.trim());
 }
 
-async function main(): Promise<void> {
-  const { values, positionals } = parseArgs({
-    allowPositionals: true,
-    options: {
-      help: {
-        type: "boolean",
-        short: "h"
-      },
-      version: {
-        type: "boolean",
-        short: "v"
-      },
-      format: {
-        type: "string",
-        multiple: true
-      },
-      json: {
-        type: "boolean"
+function parseCommandLine() {
+  try {
+    return parseArgs({
+      allowPositionals: true,
+      options: {
+        help: {
+          type: "boolean",
+          short: "h"
+        },
+        version: {
+          type: "boolean",
+          short: "v"
+        },
+        format: {
+          type: "string",
+          multiple: true
+        },
+        json: {
+          type: "boolean"
+        }
       }
-    }
-  });
+    });
+  } catch {
+    // Node's parser errors may echo arguments; never forward their messages.
+    throw new ArgumentError("syntax");
+  }
+}
+
+async function main(): Promise<void> {
+  const { values, positionals } = parseCommandLine();
 
   const formats = values.format ?? [];
   if (formats.some((format) => format !== "text" && format !== "json")) {
-    throw new Error("Expected --format text or --format json.");
+    throw new ArgumentError("format");
   }
   if (new Set(formats).size > 1 || (values.json && formats.includes("text"))) {
-    throw new Error("Conflicting output formats; choose text or json.");
+    throw new ArgumentError("conflict");
   }
   const format = values.json ? "json" : (formats[0] ?? "text");
 
@@ -79,58 +88,33 @@ async function main(): Promise<void> {
   }
 
   if (positionals.length > 1) {
-    console.error("Expected at most one repository path.");
-    process.exitCode = 2;
-    return;
+    throw new ArgumentError("paths");
   }
 
   const requestedPath = positionals[0] ?? process.cwd();
   const repositoryPath = resolve(requestedPath);
 
-  try {
-    const repository = await getRepositorySnapshot(repositoryPath);
-    const config = loadConfig(repository.root);
+  const repository = await getRepositorySnapshot(repositoryPath);
+  const config = loadConfig(repository.root);
 
-    const findings = runAudit(
-      { repository },
-      [gitCleanlinessRule, riskyTrackedFileRule, developerMachinePathRule, suspiciousBuildOutputRule,
-        largeTrackedFileRule, createForbiddenPatternRule(config.forbiddenPatterns)]
-    );
+  const findings = runAudit(
+    { repository },
+    [gitCleanlinessRule, riskyTrackedFileRule, developerMachinePathRule, suspiciousBuildOutputRule,
+      largeTrackedFileRule, createForbiddenPatternRule(config.forbiddenPatterns)]
+  );
 
-    console.log(
-      format === "json"
-        ? formatJsonReport(repository, findings, { version: VERSION })
-        : formatTextReport(repository.root, findings)
-    );
+  const report = format === "json"
+    ? formatJsonReport(repository, findings, { version: VERSION })
+    : formatTextReport(repository.root, findings);
+  const hasWarnings = findingsMeetThreshold(findings, "warning");
+  console.log(report);
 
-    if (findingsMeetThreshold(findings, "warning")) {
-      process.exitCode = 1;
-    }
-  } catch (error: unknown) {
-    if (error instanceof ConfigurationError) {
-      console.error(`Configuration error: ${error.message}`);
-      process.exitCode = 2;
-      return;
-    }
-    if (error instanceof GitCommandError) {
-      console.error("Repository scan could not start.");
-      console.error(error.message);
-
-      if (error.stderr.length > 0) {
-        console.error(error.stderr);
-      }
-
-      process.exitCode = 2;
-      return;
-    }
-
-    console.error("Unexpected runtime error.");
-    console.error(error);
-    process.exitCode = 2;
+  if (hasWarnings) {
+    process.exitCode = 1;
   }
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(formatDiagnostic(error));
   process.exitCode = 2;
 });

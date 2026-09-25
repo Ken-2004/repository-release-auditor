@@ -40,7 +40,16 @@ node dist/src/cli.js --json .
 
 Format values are exactly `text` and `json`. Unknown values, missing values,
 `--json` combined with `--format text`, or conflicting repeated formats fail
-with exit `2`. `--json --format json` is valid. Text output remains unchanged.
+with exit `2`. `--json --format json` is valid.
+
+Text reports escape untrusted repository roots and printed finding fields using
+visible `\uXXXX` notation with lowercase hexadecimal digits (for example,
+`\u001b`). The finite set is C0 controls U+0000–U+001F, DEL and C1 controls
+U+007F–U+009F, U+061C, U+200E–U+200F, U+2028–U+202E, and U+2066–U+2069.
+This covers control characters, line/paragraph separators, and bidi formatting
+controls; report-owned newlines remain separate. Other Unicode, including emoji,
+combining characters, and genuine U+FFFD, is preserved. Escaping does not change
+the files inspected, findings, ordering, or exit code.
 
 A completed JSON scan writes exactly one pretty-printed JSON document to stdout.
 For example, an empty, clean repository could produce:
@@ -73,18 +82,26 @@ array. Findings retain rule-pipeline order and contain `ruleId`, `category`,
 `severity` (`info`, `warning`, or `error`), `title`, and `message`. Optional
 `path`, `evidence`, and `remediation` strings are omitted when undefined.
 
-JSON contains only report metadata and existing redacted findings. It adds no
-source contents, configured forbidden text, timestamps, hostnames, environment
-variables, or machine metadata beyond the repository root. Evidence retains
-the existing redaction guarantees; paths and public policy IDs remain visible.
-No ANSI formatting is added. Identical snapshots and findings produce identical
-JSON.
+JSON contains report metadata and findings, without adding source excerpts,
+configured forbidden text, timestamps, hostnames, or environment variables.
+Matched values remain redacted in evidence; metadata such as paths and public
+policy IDs remains visible. No ANSI formatting is added. Identical snapshots
+and findings produce identical JSON.
+
+JSON strings use standard JSON escaping for C0 controls, with legal `\uXXXX`
+escapes for the remaining controls listed above. This is serialization escaping,
+not text-display escaping applied to the values: `JSON.parse` recovers the
+original metadata and finding strings. Pretty-printing newlines remain intact.
+Consumers must escape parsed values for their own display context; parsing does
+not make strings safe to render in a terminal, HTML, or a shell.
 
 Exit codes are unchanged: completed clean scans exit `0`; findings meeting the
 fixed warning threshold exit `1`. Argument, configuration, runtime, and tooling
-failures exit `2`, write diagnostics to stderr, and emit no partial report on
-stdout. Errors are text diagnostics even when JSON was requested. `--help` and
-`--version` remain informational text commands rather than scan reports.
+failures exit `2`, write bounded, intentionally authored diagnostics to stderr,
+and emit no partial report on stdout. Unknown failures receive fixed generic
+messages; raw errors, stacks, Git stderr, argument contents, and configuration
+values are not printed. Errors are text diagnostics even when JSON was requested.
+`--help` and `--version` remain informational text commands rather than scan reports.
 
 ## Privacy and safety
 
@@ -97,7 +114,17 @@ It will not:
 - call AI services
 - automatically delete or rewrite files
 - follow symlinks outside the repository
-- print complete secret-like values
+
+Matched-value redaction, display escaping, and anonymity are different. Content
+rules redact matched values in evidence, and display escaping prevents the
+listed controls from acting as terminal instructions or injected report lines.
+Neither removes identifying metadata. Reports still disclose the repository
+root, tracked filenames, branch/commit metadata, and public policy IDs as
+applicable. These can contain personal, client, or project information, including
+sensitive text embedded in names that the tool does not recognize or redact.
+Review reports before sharing; they are not automatically safe to post publicly.
+See [SECURITY.md](SECURITY.md) for assumptions, limitations, and how to request a
+security contact.
 
 ### Git inspection boundary
 
@@ -253,8 +280,8 @@ The GitHub Actions workflow in `.github/workflows/ci.yml` verifies
 Node.js 24 on `windows-latest` and `ubuntu-latest` for pushes and pull requests
 to `main`. It installs with `npm ci`, checks types, runs tests and `npm audit`,
 builds, and requires a clean working tree and successful text/JSON self-audits.
-The existing 140-test baseline has passed on both Windows and Ubuntu. Installed
-package verification is a separate release-readiness check.
+Checkout validation and installed-package verification are separate checks;
+passing checkout CI does not validate the final npm tarball.
 
 Run the current development CLI:
 
@@ -314,9 +341,10 @@ Public `.crt`, `.cer`, `.pub`, and generic `.pem` files are not automatically
 flagged. Generic `auth`, `config`, or `settings` names do not match. Ignored,
 untracked files are excluded; tracked files still match even if an ignore rule
 would otherwise exclude them. Findings retain path casing and are sorted by
-path using a locale-independent order. No file contents or secret values are
-printed. Verify flagged files and, if needed, remove sensitive material from
-version control and history and rotate exposed credentials.
+path using a locale-independent order. This rule does not read or quote file
+contents; reported paths are not redacted. Verify flagged files and, if needed,
+remove sensitive material from version control and history and rotate exposed
+credentials.
 
 The `developer-machine-path` rule examines the current worktree contents of
 tracked text files (including staged files, but not historical or staged blob
@@ -347,11 +375,12 @@ linked directories) are skipped without a finding or runtime failure. Other
 read failures remain runtime errors. Files inside submodules are not scanned.
 
 Evidence contains only the first matching line number and path category, with
-the value fully redacted. No embedded usernames, drive letters, directory names,
-or surrounding lines are printed. Replace flagged paths with relative paths,
-environment variables, configuration, or documented placeholders. Filename and
-byte checks are conservative heuristics; a clean report does not establish that
-all files are portable or free of sensitive information.
+the matched value fully redacted. Matched path values and surrounding source
+lines are not printed; tracked filenames remain visible. Replace flagged paths
+with relative paths, environment variables, configuration, or documented
+placeholders. Filename and byte checks are conservative heuristics; a clean
+report does not establish that all files are portable or free of sensitive
+information.
 
 The `suspicious-build-output` rule checks tracked Git paths only and reports one
 warning per matching path. It does not read file contents or determine whether a

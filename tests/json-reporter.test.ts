@@ -63,3 +63,60 @@ test("JSON reporter escapes control characters and is deterministic across input
     title: entry.title, severity: entry.severity, category: entry.category, ruleId: entry.ruleId };
   assert.equal(formatJsonReport(repository, [reordered], metadata), output);
 });
+
+const displayControlPoints = [
+  ...Array.from({ length: 32 }, (_, index) => index),
+  ...Array.from({ length: 33 }, (_, index) => 0x7f + index),
+  0x061c, 0x200e, 0x200f, 0x2028, 0x2029,
+  0x202a, 0x202b, 0x202c, 0x202d, 0x202e,
+  0x2066, 0x2067, 0x2068, 0x2069
+];
+
+test("JSON reporter preserves original parsed controls in every public string field", () => {
+  const value = `before${String.fromCodePoint(...displayControlPoints)}after`;
+  const inputRepository = Object.freeze({ root: value, branch: value, head: value });
+  const inputMetadata = Object.freeze({ version: value });
+  const entry = Object.freeze({
+    ...finding("warning", value), category: value, title: value, message: value,
+    path: value, evidence: value, remediation: value
+  });
+  const findings = Object.freeze([entry, Object.freeze(finding("info"))]);
+  const report = JSON.parse(formatJsonReport(inputRepository, findings, inputMetadata));
+  assert.equal(report.schemaVersion, 1);
+  assert.deepEqual(report.repository, inputRepository);
+  assert.equal(report.tool.version, value);
+  assert.deepEqual(report.summary, { findingCount: 2, bySeverity: { info: 1, warning: 1, error: 0 } });
+  assert.deepEqual(report.findings, findings);
+});
+
+test("JSON reporter serializes every declared control safely while retaining pretty-print formatting", () => {
+  const shortEscapes = new Map([
+    [0x08, "\\b"], [0x09, "\\t"], [0x0a, "\\n"], [0x0c, "\\f"], [0x0d, "\\r"]
+  ]);
+  const baselineLines = formatJsonReport(repository, [{ ...finding("warning"), path: "beforeafter" }], metadata).split("\n").length;
+  for (const point of displayControlPoints) {
+    const character = String.fromCodePoint(point);
+    const path = `before${character}after`;
+    const output = formatJsonReport(repository, [{ ...finding("warning"), path }], metadata);
+    const escaped = shortEscapes.get(point) ?? `\\u${point.toString(16).padStart(4, "0")}`;
+    assert.ok(output.includes(`"path": "before${escaped}after"`));
+    if (point !== 0x0a) assert.equal(output.includes(character), false);
+    assert.equal(output.split("\n").length, baselineLines);
+    assert.equal(JSON.parse(output).findings[0].path, path);
+  }
+});
+
+test("JSON reporter preserves ordinary serialization and printable Unicode without display pre-escaping", () => {
+  const value = "nested/\u65e5\u672c\u8a9e/caf\u00e9/e\u0301/\ud83d\udd0e/\ufffd/quoted\"/back\\slash.txt";
+  const entry = { ...finding("warning", value), title: value, message: value, path: value, evidence: value, remediation: value };
+  const inputRepository = { root: value, branch: value, head: null };
+  const output = formatJsonReport(inputRepository, [entry], metadata);
+  assert.equal(output, JSON.stringify({
+    schemaVersion: 1,
+    tool: { name: "repository-release-auditor", version: metadata.version },
+    repository: inputRepository,
+    summary: { findingCount: 1, bySeverity: { info: 0, warning: 1, error: 0 } },
+    findings: [entry]
+  }, null, 2));
+  assert.deepEqual(JSON.parse(output).findings, [entry]);
+});
