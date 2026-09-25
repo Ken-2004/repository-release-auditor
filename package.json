@@ -8,6 +8,7 @@
   "files": [
     "dist/src/**/*.js",
     "README.md",
+    "SECURITY.md",
     "LICENSE",
     "docs/DEPENDENCIES.md"
   ],
@@ -24,8 +25,9 @@
     "start": "node dist/src/cli.js",
     "test": "npm run build && node --test dist/tests/*.test.js",
     "check": "tsc -p tsconfig.json --noEmit",
-    "prepack": "npm run build -- --sourceMap false --declaration false --newLine lf",
-    "pack:check": "npm pack --dry-run"
+    "prepack": "node scripts/build-release.mjs",
+    "pack:check": "npm pack --dry-run",
+    "pack:verify": "node scripts/verify-package.mjs"
   },
   "keywords": ["cli", "git", "repository-hygiene", "release", "audit"],
   "author": "Harsh Prajapati",

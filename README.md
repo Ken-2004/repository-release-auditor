@@ -211,11 +211,42 @@ From a checkout with development dependencies installed, inspect the package:
 npm run pack:check
 ```
 
-`npm pack` and its dry run rebuild the JavaScript with LF line endings and no
-source maps. The whitelist includes only `dist/src/**/*.js`, `README.md`, `LICENSE`, and
-`docs/DEPENDENCIES.md`, plus npm's required `package.json`. Source, compiled tests,
-type declarations, source maps, CI files, and development artifacts are excluded.
-The standard MIT license is included in every package.
+`npm pack` and its dry run first clean this package's fixed `dist` directory,
+resolved from the checkout build helper's location. The helper does not select
+output from the caller's working directory, scan arguments, or environment. It
+refuses a linked output root or nested symlink/junction, then compiles only
+runtime JavaScript with LF line endings, a CLI shebang, and no source maps or
+declarations. A failed clean or compile fails packaging. This assumes a stable
+checkout filesystem; normal development build/test commands remain unchanged.
+
+The whitelist includes only `dist/src/**/*.js`, `README.md`, `SECURITY.md`,
+`LICENSE`, and `docs/DEPENDENCIES.md`, plus npm's required `package.json`. Source,
+compiled tests, type declarations, source maps, CI files, build helpers, and
+development artifacts are excluded. The MIT license and linked security
+documentation are included in every package.
+
+For actual archive and installed-command verification, run:
+
+```text
+npm run pack:verify
+```
+
+This requires Python 3 (`python` on Windows, `python3` on Unix) for standard-library
+archive inspection, in addition to the checkout's supported Node/npm/Git and
+installed development dependencies. Python is not required for ordinary
+`npm pack` or installed CLI use. The command checks stale/deleted-source output,
+cleaning boundaries, and compile failures in disposable copies; creates and
+inspects a real tarball; then installs that same artifact offline in an isolated
+temporary consumer with installation scripts disabled. It exercises the actual
+Windows `.cmd` or Unix `.bin` launcher, including exit codes, JSON, privacy, and
+safe-inspection refusal. It reports the archive manifest, SHA-256, sizes, and
+check results, retaining the tarball and `verification.json` beneath the OS
+temporary directory in `auditor-package-*/artifacts` for review.
+
+`pack:check` remains a dry run; it does not replace these artifact checks.
+Hosted package verification remains a separate reviewed CI integration. Neither
+artifact checks nor checkout tests establish that all sensitive information has
+been found.
 
 For a local install, first create a package in an existing directory outside the
 checkout, then install that tarball into a separate test directory:
@@ -227,7 +258,7 @@ npm pack --pack-destination ../package-output
 From the separate test directory (adjust the tarball path as needed):
 
 ```text
-npm install --no-save --package-lock=false ../package-output/repository-release-auditor-0.1.0.tgz
+npm install --prefix . --offline --ignore-scripts --no-audit --no-fund --no-save --package-lock=false --omit=dev ../package-output/repository-release-auditor-0.1.0.tgz
 npm exec --offline -- repository-release-auditor --help
 npm exec --offline -- repository-release-auditor --version
 npm exec --offline -- repository-release-auditor --format json ../repository-to-scan
