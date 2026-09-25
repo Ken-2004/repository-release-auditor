@@ -244,9 +244,10 @@ check results, retaining the tarball and `verification.json` beneath the OS
 temporary directory in `auditor-package-*/artifacts` for review.
 
 `pack:check` remains a dry run; it does not replace these artifact checks.
-Hosted package verification remains a separate reviewed CI integration. Neither
-artifact checks nor checkout tests establish that all sensitive information has
-been found.
+The workflow is configured for hosted package verification, but that checkpoint
+remains pending until a reviewed commit passes the updated Windows and Ubuntu
+jobs. Neither artifact checks nor checkout tests establish that all sensitive
+information has been found.
 
 For a local install, first create a package in an existing directory outside the
 checkout, then install that tarball into a separate test directory:
@@ -307,12 +308,21 @@ Run tests:
 npm test
 ```
 
-The GitHub Actions workflow in `.github/workflows/ci.yml` verifies
+The GitHub Actions workflow in `.github/workflows/ci.yml` is configured for
 Node.js 24 on `windows-latest` and `ubuntu-latest` for pushes and pull requests
-to `main`. It installs with `npm ci`, checks types, runs tests and `npm audit`,
-builds, and requires a clean working tree and successful text/JSON self-audits.
-Checkout validation and installed-package verification are separate checks;
-passing checkout CI does not validate the final npm tarball.
+to `main`. It sets up Python 3.12 for verification and checks the interpreter
+used by the package inspector (`python` on Windows, `python3` on Ubuntu).
+After `npm ci` and type-checking, it runs `npm run pack:verify` for actual archive
+and isolated installed-bin checks, then the complete `npm test` to rebuild and
+test development output after packaging. It retains `npm audit`, the final
+build, the clean-tree assertion, and text/JSON self-audits. Jobs have a 20-minute
+limit; the package-verification step has a 10-minute limit. Failures fail CI.
+Existing hosted checkout validation is separate from the pending hosted
+packaging checkpoint; it does not validate a newly built npm tarball.
+
+`.gitattributes` explicitly keeps `.mjs` and `.py` helper/test files at LF on
+checkout, alongside the existing source/documentation rules. This policy is
+separate from the release compiler's LF JavaScript output.
 
 Run the current development CLI:
 
