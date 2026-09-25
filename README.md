@@ -244,10 +244,13 @@ check results, retaining the tarball and `verification.json` beneath the OS
 temporary directory in `auditor-package-*/artifacts` for review.
 
 `pack:check` remains a dry run; it does not replace these artifact checks.
-The workflow is configured for hosted package verification, but that checkpoint
-remains pending until a reviewed commit passes the updated Windows and Ubuntu
-jobs. Neither artifact checks nor checkout tests establish that all sensitive
-information has been found.
+The Windows and Ubuntu hosted packaging checkpoint passed in
+[run 36106852087](https://github.com/Ken-2004/repository-release-auditor/actions/runs/36106852087)
+for commit `7cfc72f965b2cc75cb01a94f7db33d2b83b6144b`, covering archive
+construction and inspection, isolated installed launchers, and development tests
+after packaging. Future release artifacts must be built and verified separately.
+Neither artifact checks nor checkout tests establish that all sensitive
+information has been found or that publication is safe.
 
 For a local install, first create a package in an existing directory outside the
 checkout, then install that tarball into a separate test directory:
@@ -317,8 +320,8 @@ and isolated installed-bin checks, then the complete `npm test` to rebuild and
 test development output after packaging. It retains `npm audit`, the final
 build, the clean-tree assertion, and text/JSON self-audits. Jobs have a 20-minute
 limit; the package-verification step has a 10-minute limit. Failures fail CI.
-Existing hosted checkout validation is separate from the pending hosted
-packaging checkpoint; it does not validate a newly built npm tarball.
+This workflow remains configured to repeat these checks. The completed hosted
+checkpoint above does not validate artifacts built from later changes.
 
 `.gitattributes` explicitly keeps `.mjs` and `.py` helper/test files at LF on
 checkout, alongside the existing source/documentation rules. This policy is
