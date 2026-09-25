@@ -7,14 +7,18 @@ historical releases or certify a repository as secure or safe to publish.
 
 ## Reporting a concern
 
-A private vulnerability-reporting route has not been verified for this project.
+Private vulnerability reporting is enabled for this repository.
+[Report a vulnerability privately](https://github.com/Ken-2004/repository-release-auditor/security/advisories/new)
+through GitHub, or select **Report a vulnerability** in the repository's
+Security/Advisories area.
+
+Include the affected version or commit, relevant OS/Node/Git versions, a
+description of the impact, and a minimal sanitized reproduction using synthetic
+data. Do not include live credentials, production or private repositories, or
+unnecessary personal information.
+
 Do not post exploit details, credentials, private repository contents, or
-sensitive reports in public issues. You may [open an issue requesting a private
-security contact](https://github.com/Ken-2004/repository-release-auditor/issues)
-without including technical details or sensitive data. Wait for a verified
-private channel before sharing them. No response time or bounty is promised.
-Verifying a private reporting route remains a maintainer action; this document
-does not configure one.
+sensitive reports in public issues. No response time or bounty is promised.
 
 ## Supported environment and trust boundary
 

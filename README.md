@@ -123,8 +123,8 @@ root, tracked filenames, branch/commit metadata, and public policy IDs as
 applicable. These can contain personal, client, or project information, including
 sensitive text embedded in names that the tool does not recognize or redact.
 Review reports before sharing; they are not automatically safe to post publicly.
-See [SECURITY.md](SECURITY.md) for assumptions, limitations, and how to request a
-security contact.
+See [SECURITY.md](SECURITY.md) for assumptions, limitations, and how to report a
+vulnerability privately.
 
 ### Git inspection boundary
 
