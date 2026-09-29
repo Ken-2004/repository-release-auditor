@@ -1,11 +1,9 @@
 # Security and privacy
 
-Repository Release Auditor 0.1.0 is an initial release candidate under active
-development. The source is public under MIT. The npm package has not been
-published; its `private` property has been deliberately removed for release
-preparation. Publication requires separate approval and verification of the
-selected artifact. This document does not establish support for historical
-releases or certify a repository as secure or safe to publish.
+Repository Release Auditor 0.1.0 is published on npm and remains under active
+development. The source and package are open source under MIT. This document
+does not establish support for historical releases or certify a repository as
+secure or safe to publish.
 
 ## Reporting a concern
 

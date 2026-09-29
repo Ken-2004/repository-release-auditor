@@ -2,11 +2,10 @@
 
 Repository Release Auditor is a local command-line tool for evidence-based Git repository release-hygiene checks.
 
-Version 0.1.0 is an initial release candidate prepared for npm publication. The
-source repository is public and open source under MIT. The package is not yet
-published to npm. Its `private` property has been deliberately removed; actual
-publication requires a separate decision and final verification of the selected
-artifact.
+Version 0.1.0 is published on
+[npm](https://www.npmjs.com/package/repository-release-auditor).
+The source repository and package are open source under MIT. This is an initial
+release under active development; the documented limitations still apply.
 
 ## Goal
 
@@ -24,6 +23,37 @@ The tool reports evidence and warnings. It does not claim that a repository is s
 - configurable forbidden patterns
 
 Configurable allowlists and ignores remain future ideas and are not implemented.
+
+## Install from npm
+
+Requires Node.js **24** (`>=24 <25`), npm, and a trusted Git **2.36 or newer**
+installation on `PATH`.
+
+Install the published version with installation lifecycle scripts disabled:
+
+```bash
+npm install --global --ignore-scripts repository-release-auditor@0.1.0
+```
+
+Check the installed command:
+
+```bash
+repository-release-auditor --version
+repository-release-auditor --help
+```
+
+From the repository you want to inspect, run a text or JSON scan:
+
+```bash
+repository-release-auditor .
+repository-release-auditor --format json .
+```
+
+The published package includes compiled JavaScript; no source checkout,
+TypeScript build, or Python installation is needed to use the installed CLI.
+Exit `0` means no findings, `1` means findings were reported, and `2` means the
+scan failed or was refused. Review the [privacy and safety](#privacy-and-safety)
+limitations before scanning or sharing a report.
 
 ## Output
 
@@ -204,8 +234,8 @@ Git is the source of truth for repository state and tracked-file discovery.
 
 Requires Node.js **24** (`>=24 <25`), npm, and Git **2.36 or newer** on `PATH`.
 There are no runtime dependencies. The package and command name is
-`repository-release-auditor`;
-npm name availability must be rechecked immediately before npm publication.
+`repository-release-auditor`. Use [Install from npm](#install-from-npm) for the
+published version; the instructions below build and inspect a local checkout.
 
 From a checkout with development dependencies installed, inspect the package:
 
@@ -274,16 +304,17 @@ The installed command is `repository-release-auditor [options] [path]`; omitted
 paths default to the current directory. Installing the tarball requires no
 TypeScript build or global installation. Keep packaging/install artifacts outside
 the repository being audited so they do not trigger the cleanliness rule.
-These instructions use a local tarball; no public npm release is available.
+These instructions use a locally built tarball rather than the published npm
+archive. Repository documentation may be newer than the documents bundled with
+npm version 0.1.0; editing this checkout does not change that published archive.
 
-Publishing the source on GitHub does not publish the npm package. The release
-checks require the package's own `private` property to be absent; an explicit
-`false` value is also rejected by this project's policy. Removing this property
-removes npm's accidental-publication block, but does not reserve the package name
-or authorize publication. Before npm publication, recheck name availability,
-verify the selected artifact, and obtain explicit approval to publish. Creating
-tags or GitHub releases also requires separate approval. Local packaging does
-not authorize those actions.
+Local packaging does not publish a package. The release checks require the
+package's own `private` property to be absent; an explicit `false` value is also
+rejected by this project's policy. This is a metadata policy, not permission to
+publish. Any future npm release requires separate approval of its version,
+metadata, and selected artifact. Git tags and GitHub releases also require
+separate approval. A new local verification archive must not be used to replace
+the already-published 0.1.0 archive.
 
 ## Development
 
@@ -349,9 +380,9 @@ The exit-code contract is:
 
 ## Project status
 
-Initial release candidate 0.1.0: all six intended rule families and text/JSON
-reporting are implemented. Local packaging is supported under MIT. GitHub source
-publication and npm package publication are separate steps, as described above.
+Initial release 0.1.0 is published on npm. All six intended rule families and
+text/JSON reporting are implemented. Local package construction and verification
+remain supported under MIT; the documented limitations still apply.
 
 The current implementation can:
 
