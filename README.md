@@ -2,9 +2,11 @@
 
 Repository Release Auditor is a local command-line tool for evidence-based Git repository release-hygiene checks.
 
-Version 0.1.0 is an initial release candidate. The source repository is public
-and open source under MIT. The package is not yet published to npm;
-`package.json` retains `"private": true` pending separate npm publication approval.
+Version 0.1.0 is an initial release candidate prepared for npm publication. The
+source repository is public and open source under MIT. The package is not yet
+published to npm. Its `private` property has been deliberately removed; actual
+publication requires a separate decision and final verification of the selected
+artifact.
 
 ## Goal
 
@@ -274,10 +276,14 @@ TypeScript build or global installation. Keep packaging/install artifacts outsid
 the repository being audited so they do not trigger the cleanliness rule.
 These instructions use a local tarball; no public npm release is available.
 
-Publishing the source on GitHub does not publish the npm package. Before npm
-publication, recheck npm name availability and obtain explicit approval to remove
-`"private": true` and publish to npm. Creating tags or GitHub releases also requires
-separate approval. Local packaging does not authorize those actions.
+Publishing the source on GitHub does not publish the npm package. The release
+checks require the package's own `private` property to be absent; an explicit
+`false` value is also rejected by this project's policy. Removing this property
+removes npm's accidental-publication block, but does not reserve the package name
+or authorize publication. Before npm publication, recheck name availability,
+verify the selected artifact, and obtain explicit approval to publish. Creating
+tags or GitHub releases also requires separate approval. Local packaging does
+not authorize those actions.
 
 ## Development
 

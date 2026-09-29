@@ -68,8 +68,9 @@ async function verifyInstallation({ archive, directory, env, npmCli }) {
   requireCheck(within(consumer, modules) && within(modules, packageRoot),
     "installed package containment");
   const packageJson = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
-  requireCheck(packageJson.name === packageName && packageJson.version === "0.1.0" &&
-    packageJson.private === true && packageJson.license === "MIT" &&
+  requireCheck(packageJson !== null && typeof packageJson === "object" && !Array.isArray(packageJson) &&
+    packageJson.name === packageName && packageJson.version === "0.1.0" &&
+    Object.hasOwn(packageJson, "private") === false && packageJson.license === "MIT" &&
     packageJson.author === "Harsh Prajapati" && packageJson.engines?.node === ">=24 <25" &&
     packageJson.bin?.[packageName] === "dist/src/cli.js" &&
     Object.keys(packageJson.dependencies ?? {}).length === 0 &&

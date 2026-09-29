@@ -96,10 +96,11 @@ try {
     }
   }
   const metadata = JSON.parse(contents.get("package/package.json").toString("utf8"));
+  assert.ok(metadata !== null && typeof metadata === "object" && !Array.isArray(metadata));
   assert.deepEqual(metadata, JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")));
   assert.equal(metadata.name, "repository-release-auditor");
   assert.equal(metadata.version, "0.1.0");
-  assert.equal(metadata.private, true);
+  assert.equal(Object.hasOwn(metadata, "private"), false);
   assert.equal(metadata.license, "MIT");
   assert.equal(metadata.author, "Harsh Prajapati");
   assert.deepEqual(metadata.engines, { node: ">=24 <25" });

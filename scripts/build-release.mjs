@@ -15,7 +15,9 @@ try {
 
   const packageRoot = realpathSync(dirname(dirname(realpathSync(fileURLToPath(import.meta.url)))));
   const metadata = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
-  if (metadata.name !== "repository-release-auditor" || metadata.private !== true) {
+  if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata) ||
+      metadata.name !== "repository-release-auditor" || metadata.version !== "0.1.0" ||
+      Object.hasOwn(metadata, "private")) {
     throw new Error();
   }
 

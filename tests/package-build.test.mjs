@@ -123,6 +123,8 @@ test("baseline prepack reproduces deleted-source JavaScript and canary bytes in 
 
 test("candidate pack removes deleted-source and seeded development output before archiving", async (t) => {
   const f = await fixture(t);
+  const metadata = JSON.parse(await readFile(join(f.root, "package.json"), "utf8"));
+  assert.equal(Object.hasOwn(metadata, "private"), false);
   await addDeletedSource(f);
   const stalePaths = [
     "src/synthetic-stale.js", "src/synthetic-stale.js.map", "src/synthetic-stale.d.ts",
@@ -131,6 +133,10 @@ test("candidate pack removes deleted-source and seeded development output before
   ];
   for (const path of stalePaths) await seedOutput(f, path);
   const files = await unpackedFiles(await pack(f, "candidate-artifact"));
+  const archivedMetadata = JSON.parse(Buffer.from(
+    files.find((file) => file.path === "package/package.json").data, "base64").toString("utf8"));
+  assert.deepEqual(archivedMetadata, metadata);
+  assert.equal(Object.hasOwn(archivedMetadata, "private"), false);
   assert.equal(await exists(join(f.root, compiledCanary)), false);
   for (const path of stalePaths) assert.equal(await exists(join(f.root, "dist", path)), false);
   assert.equal(containsMarker(files, marker), false);
@@ -140,6 +146,41 @@ test("candidate pack removes deleted-source and seeded development output before
   assert.equal(paths(files).some((path) => /\.(?:map|ts)$/.test(path)), false);
   assert.equal(await exists(join(f.root, "dist", "tests")), false);
 });
+
+for (const [label, change] of [
+  ["private true", (metadata) => ({ ...metadata, private: true })],
+  ["private false", (metadata) => ({ ...metadata, private: false })],
+  ["private string", (metadata) => ({ ...metadata, private: "SYNTHETIC_PRIVATE_VALUE" })],
+  ["private null", (metadata) => ({ ...metadata, private: null })],
+  ["wrong package name", (metadata) => ({ ...metadata, name: "synthetic-wrong-package" })],
+  ["wrong version", (metadata) => ({ ...metadata, version: "9.9.9" })],
+  ["null root", () => null],
+  ["array root", (metadata) => [metadata]],
+  ["string root", () => "SYNTHETIC_MANIFEST_VALUE"],
+  ["number root", () => 42],
+  ["boolean root", () => true]
+]) {
+  test(`release policy refuses ${label} before cleanup and creates no archive`, async (t) => {
+    const f = await fixture(t);
+    const metadataPath = join(f.root, "package.json");
+    const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+    assert.equal(Object.hasOwn(metadata, "private"), false);
+    const sentinel = await seedOutput(f, "src/synthetic-retained.js");
+    const before = await readFile(sentinel);
+    await writeFile(metadataPath, `${JSON.stringify(change(metadata), null, 2)}\n`);
+
+    const direct = command(f, [join(f.root, helper)]);
+    assertFailure(direct);
+    assert.equal(direct.stdout, "");
+    assert.equal(direct.stderr.trim(), "Release build failed: package root could not be verified.");
+    assert.deepEqual(await readFile(sentinel), before);
+
+    const packed = await pack(f, "refused-metadata-artifact");
+    assertFailure(packed.result);
+    assert.deepEqual(await readdir(packed.destination), []);
+    assert.deepEqual(await readFile(sentinel), before);
+  });
+}
 
 test("real package construction works with missing output and repeats without stale state", async (t) => {
   const f = await fixture(t);
